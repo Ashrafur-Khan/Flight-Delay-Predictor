@@ -1,13 +1,8 @@
 import { AlertCircle, CheckCircle, AlertTriangle } from 'lucide-react';
-
-interface PredictionData {
-  probability: number;
-  riskLevel: 'low' | 'moderate' | 'high';
-  explanation: string;
-}
+import type { PredictionResponse } from '@/types';
 
 interface PredictionResultProps {
-  prediction: PredictionData | null;
+  prediction: PredictionResponse | null;
   isLoading: boolean;
   hasSubmitted: boolean;
 }
@@ -45,25 +40,25 @@ export function PredictionResult({ prediction, isLoading, hasSubmitted }: Predic
 
   if (!prediction) return null;
 
-  const getColorClass = () => {
+  const getColorClass = (): string => {
     if (prediction.probability < 30) return 'text-green-600';
     if (prediction.probability < 70) return 'text-yellow-600';
     return 'text-red-600';
   };
 
-  const getBgColorClass = () => {
+  const getBgColorClass = (): string => {
     if (prediction.probability < 30) return 'bg-green-50';
     if (prediction.probability < 70) return 'bg-yellow-50';
     return 'bg-red-50';
   };
 
-  const getBorderColorClass = () => {
+  const getBorderColorClass = (): string => {
     if (prediction.probability < 30) return 'border-green-200';
     if (prediction.probability < 70) return 'border-yellow-200';
     return 'border-red-200';
   };
 
-  const getRiskLabel = () => {
+  const getRiskLabel = (): string => {
     switch (prediction.riskLevel) {
       case 'low':
         return 'Low Delay Risk';
@@ -71,6 +66,8 @@ export function PredictionResult({ prediction, isLoading, hasSubmitted }: Predic
         return 'Moderate Delay Risk';
       case 'high':
         return 'High Delay Risk';
+      default:
+        return 'Delay Risk';
     }
   };
 
@@ -81,6 +78,8 @@ export function PredictionResult({ prediction, isLoading, hasSubmitted }: Predic
       case 'moderate':
         return <AlertTriangle className="w-8 h-8" />;
       case 'high':
+        return <AlertCircle className="w-8 h-8" />;
+      default:
         return <AlertCircle className="w-8 h-8" />;
     }
   };

@@ -2,26 +2,11 @@ import { useState } from 'react';
 import { AirportInput } from './AirportInput';
 import { PredictionResult } from './PredictionResult';
 import { ChevronDown, ChevronUp, Plane } from 'lucide-react';
-
-interface FlightData {
-  departureDate: string;
-  departureTime: string;
-  originAirport: string;
-  destinationAirport: string;
-  duration: string;
-  temperature: string;
-  precipitation: string;
-  wind: string;
-}
-
-interface PredictionData {
-  probability: number;
-  riskLevel: 'low' | 'moderate' | 'high';
-  explanation: string;
-}
+import type { FlightFormData, PredictionResponse } from '@/types';
+import { submitPrediction } from '@/services/prediction';
 
 export function FlightDelayPredictor() {
-  const [formData, setFormData] = useState<FlightData>({
+  const [formData, setFormData] = useState<FlightFormData>({
     departureDate: '',
     departureTime: '',
     originAirport: '',
@@ -33,22 +18,31 @@ export function FlightDelayPredictor() {
   });
 
   const [showAdvanced, setShowAdvanced] = useState(false);
-  const [prediction, setPrediction] = useState<PredictionData | null>(null);
+  const [prediction, setPrediction] = useState<PredictionResponse | null>(null);
   const [isLoading, setIsLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
-  const handleInputChange = (field: keyof FlightData, value: string) => {
+  const handleInputChange = <Field extends keyof FlightFormData>(
+    field: Field,
+    value: FlightFormData[Field],
+  ) => {
     setFormData(prev => ({ ...prev, [field]: value }));
   };
 
-  const handlePredict = () => {
+  const handlePredict = async () => {
     setIsLoading(true);
-    
-    // Simulate API call with mock prediction
-    setTimeout(() => {
-      const mockPrediction = generateMockPrediction(formData);
-      setPrediction(mockPrediction);
+    setError(null);
+
+    try {
+      const result = await submitPrediction(formData);
+      setPrediction(result);
+    } catch (predictionError) {
+      console.error('Prediction request failed', predictionError);
+      setError('Unable to fetch a prediction right now. Please try again shortly.');
+      setPrediction(null);
+    } finally {
       setIsLoading(false);
-    }, 1200);
+    }
   };
 
   const isFormValid = formData.departureDate && 
@@ -164,7 +158,9 @@ export function FlightDelayPredictor() {
                   </label>
                   <select
                     value={formData.precipitation}
-                    onChange={(e) => handleInputChange('precipitation', e.target.value)}
+                    onChange={(e) =>
+                      handleInputChange('precipitation', e.target.value as FlightFormData['precipitation'])
+                    }
                     className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                   >
                     <option value="none">None</option>
@@ -181,7 +177,9 @@ export function FlightDelayPredictor() {
                   </label>
                   <select
                     value={formData.wind}
-                    onChange={(e) => handleInputChange('wind', e.target.value)}
+                    onChange={(e) =>
+                      handleInputChange('wind', e.target.value as FlightFormData['wind'])
+                    }
                     className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                   >
                     <option value="calm">Calm</option>
@@ -201,6 +199,11 @@ export function FlightDelayPredictor() {
           >
             {isLoading ? 'Analyzing...' : 'Predict Delay Probability'}
           </button>
+          {error && (
+            <p className="mt-3 text-sm text-red-600" role="alert">
+              {error}
+            </p>
+          )}
         </div>
 
         {/* Result Panel */}
@@ -214,75 +217,4 @@ export function FlightDelayPredictor() {
       </div>
     </div>
   );
-}
-
-function generateMockPrediction(data: FlightData): PredictionData {
-  // Mock logic based on inputs
-  let probability = 25;
-  const factors: string[] = [];
-
-  // Weather impact
-  if (data.precipitation === 'snow') {
-    probability += 35;
-    factors.push('winter weather conditions');
-  } else if (data.precipitation === 'thunderstorms') {
-    probability += 30;
-    factors.push('severe weather');
-  } else if (data.precipitation === 'rain') {
-    probability += 15;
-    factors.push('rain conditions');
-  }
-
-  if (data.wind === 'strong') {
-    probability += 20;
-    factors.push('strong winds');
-  } else if (data.wind === 'moderate') {
-    probability += 10;
-  }
-
-  // Time-based factors
-  if (data.departureTime) {
-    const hour = parseInt(data.departureTime.split(':')[0]);
-    if (hour >= 6 && hour <= 9) {
-      probability += 12;
-      factors.push('morning rush hour');
-    } else if (hour >= 17 && hour <= 20) {
-      probability += 15;
-      factors.push('evening peak hours');
-    }
-  }
-
-  // Duration impact
-  const duration = parseInt(data.duration);
-  if (duration > 300) {
-    probability += 8;
-    factors.push('long-haul flight');
-  }
-
-  // Cap probability
-  probability = Math.min(95, Math.max(5, probability));
-
-  // Determine risk level
-  let riskLevel: 'low' | 'moderate' | 'high';
-  if (probability < 30) riskLevel = 'low';
-  else if (probability < 70) riskLevel = 'moderate';
-  else riskLevel = 'high';
-
-  // Generate explanation
-  let explanation = '';
-  if (factors.length > 0) {
-    explanation = `Based on the flight details, there's a ${riskLevel} delay risk due to ${factors.join(', ')}. `;
-  } else {
-    explanation = `Based on the flight details, conditions appear favorable. `;
-  }
-
-  if (riskLevel === 'low') {
-    explanation += `The ${data.originAirport} to ${data.destinationAirport} route generally maintains good on-time performance under these conditions. Consider arriving at the recommended time before departure.`;
-  } else if (riskLevel === 'moderate') {
-    explanation += `The combination of route characteristics and current conditions suggests some delay potential. We recommend monitoring your flight status closely and allowing extra time for connections.`;
-  } else {
-    explanation += `Multiple factors indicate elevated delay risk for this flight. Consider backup plans for tight connections and check with your airline for real-time updates.`;
-  }
-
-  return { probability, riskLevel, explanation };
 }

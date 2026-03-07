@@ -1,5 +1,6 @@
-import { useState, useRef, useEffect } from 'react';
+import { useState, useRef, useEffect, type ChangeEvent } from 'react';
 import { MapPin } from 'lucide-react';
+import type { Airport } from '@/types';
 
 interface AirportInputProps {
   label: string;
@@ -9,7 +10,7 @@ interface AirportInputProps {
 }
 
 // Mock airport data
-const AIRPORTS = [
+const AIRPORTS: Airport[] = [
   { code: 'JFK', name: 'John F. Kennedy International', city: 'New York' },
   { code: 'LAX', name: 'Los Angeles International', city: 'Los Angeles' },
   { code: 'ORD', name: "O'Hare International", city: 'Chicago' },
@@ -67,7 +68,7 @@ export function AirportInput({ label, value, onChange, placeholder }: AirportInp
     }
   };
 
-  const handleSelectAirport = (airport: typeof AIRPORTS[0]) => {
+  const handleSelectAirport = (airport: Airport) => {
     const displayValue = `${airport.code} - ${airport.city}`;
     setQuery(displayValue);
     onChange(displayValue);
@@ -84,7 +85,7 @@ export function AirportInput({ label, value, onChange, placeholder }: AirportInp
         <input
           type="text"
           value={value}
-          onChange={(e) => handleInputChange(e.target.value)}
+          onChange={(event: ChangeEvent<HTMLInputElement>) => handleInputChange(event.target.value)}
           onFocus={() => setShowSuggestions(true)}
           placeholder={placeholder}
           className="w-full pl-10 pr-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
