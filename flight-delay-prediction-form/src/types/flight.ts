@@ -1,6 +1,8 @@
 export type PrecipitationType = 'none' | 'rain' | 'snow' | 'thunderstorms' | 'sleet';
 export type WindCondition = 'calm' | 'moderate' | 'strong';
 export type RiskLevel = 'low' | 'moderate' | 'high';
+export type PredictionSource = 'backend' | 'mock_fallback';
+export type PredictionPath = 'heuristic_only' | 'model_plus_heuristic';
 
 export interface Airport {
   code: string;
@@ -19,10 +21,61 @@ export interface FlightFormData {
   wind: WindCondition;
 }
 
-export type PredictionRequest = FlightFormData;
+export interface PredictionRequest extends FlightFormData {
+  includeDebug?: boolean;
+}
+
+export interface PredictionDebugRawInput {
+  departureDate: string;
+  departureTime: string;
+  originAirport: string;
+  destinationAirport: string;
+  durationMinutes: number;
+  temperatureF: number;
+  precipitation: PrecipitationType;
+  wind: WindCondition;
+}
+
+export interface PredictionDebugDerivedFeatures {
+  month: number;
+  arr_flights: number;
+  weather_delay_norm: number;
+  nas_delay_norm: number;
+  security_delay_norm: number;
+  late_aircraft_delay_norm: number;
+  total_delay_norm: number;
+  route_congestion_score: number;
+  peak_departure_score: number;
+}
+
+export interface PredictionDebugScoreBreakdown {
+  baseScore: number;
+  routeContribution: number;
+  peakContribution: number;
+  totalDelayContribution: number;
+  precipitationBonus: number;
+  windBonus: number;
+  unclampedTotal: number;
+  clampedTotal: number;
+}
+
+export interface PredictionDebugInfo {
+  pathUsed: PredictionPath;
+  modelLoaded: boolean;
+  rawInput: PredictionDebugRawInput;
+  derivedFeatures: PredictionDebugDerivedFeatures;
+  scoreBreakdown: PredictionDebugScoreBreakdown;
+  modelScore: number | null;
+  heuristicScore: number;
+  finalProbability: number;
+  notes: string[];
+}
 
 export interface PredictionResponse {
   probability: number;
   riskLevel: RiskLevel;
   explanation: string;
+  debug?: PredictionDebugInfo;
+  source?: PredictionSource;
+  submittedRequest?: PredictionRequest;
 }

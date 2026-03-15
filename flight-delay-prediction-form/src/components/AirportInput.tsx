@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect, type ChangeEvent } from 'react';
 import { MapPin } from 'lucide-react';
-import type { Airport } from '@/types';
+import { AIRPORTS, findAirportByCode, getAirportDisplayLabel } from '@/lib/airports';
 
 interface AirportInputProps {
   label: string;
@@ -9,35 +9,16 @@ interface AirportInputProps {
   placeholder?: string;
 }
 
-// Mock airport data
-const AIRPORTS: Airport[] = [
-  { code: 'JFK', name: 'John F. Kennedy International', city: 'New York' },
-  { code: 'LAX', name: 'Los Angeles International', city: 'Los Angeles' },
-  { code: 'ORD', name: "O'Hare International", city: 'Chicago' },
-  { code: 'ATL', name: 'Hartsfield-Jackson Atlanta International', city: 'Atlanta' },
-  { code: 'DFW', name: 'Dallas/Fort Worth International', city: 'Dallas' },
-  { code: 'DEN', name: 'Denver International', city: 'Denver' },
-  { code: 'SFO', name: 'San Francisco International', city: 'San Francisco' },
-  { code: 'SEA', name: 'Seattle-Tacoma International', city: 'Seattle' },
-  { code: 'LAS', name: 'Harry Reid International', city: 'Las Vegas' },
-  { code: 'MCO', name: 'Orlando International', city: 'Orlando' },
-  { code: 'MIA', name: 'Miami International', city: 'Miami' },
-  { code: 'BOS', name: 'Logan International', city: 'Boston' },
-  { code: 'EWR', name: 'Newark Liberty International', city: 'Newark' },
-  { code: 'MSP', name: 'Minneapolis-St Paul International', city: 'Minneapolis' },
-  { code: 'DTW', name: 'Detroit Metropolitan Wayne County', city: 'Detroit' },
-  { code: 'PHL', name: 'Philadelphia International', city: 'Philadelphia' },
-  { code: 'LGA', name: 'LaGuardia', city: 'New York' },
-  { code: 'BWI', name: 'Baltimore/Washington International', city: 'Baltimore' },
-  { code: 'IAD', name: 'Washington Dulles International', city: 'Washington D.C.' },
-  { code: 'SAN', name: 'San Diego International', city: 'San Diego' },
-];
-
 export function AirportInput({ label, value, onChange, placeholder }: AirportInputProps) {
-  const [query, setQuery] = useState('');
+  const [query, setQuery] = useState(value);
   const [showSuggestions, setShowSuggestions] = useState(false);
   const [filteredAirports, setFilteredAirports] = useState(AIRPORTS);
   const containerRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const selectedAirport = findAirportByCode(value);
+    setQuery(selectedAirport ? getAirportDisplayLabel(selectedAirport) : value);
+  }, [value]);
 
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
@@ -53,9 +34,9 @@ export function AirportInput({ label, value, onChange, placeholder }: AirportInp
   const handleInputChange = (inputValue: string) => {
     setQuery(inputValue);
     onChange(inputValue);
-    
+
     if (inputValue.trim()) {
-      const filtered = AIRPORTS.filter(airport => 
+      const filtered = AIRPORTS.filter(airport =>
         airport.code.toLowerCase().includes(inputValue.toLowerCase()) ||
         airport.city.toLowerCase().includes(inputValue.toLowerCase()) ||
         airport.name.toLowerCase().includes(inputValue.toLowerCase())
@@ -68,10 +49,9 @@ export function AirportInput({ label, value, onChange, placeholder }: AirportInp
     }
   };
 
-  const handleSelectAirport = (airport: Airport) => {
-    const displayValue = `${airport.code} - ${airport.city}`;
-    setQuery(displayValue);
-    onChange(displayValue);
+  const handleSelectAirport = (airport: typeof AIRPORTS[number]) => {
+    setQuery(getAirportDisplayLabel(airport));
+    onChange(airport.code);
     setShowSuggestions(false);
   };
 
@@ -84,7 +64,7 @@ export function AirportInput({ label, value, onChange, placeholder }: AirportInp
         <MapPin className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
         <input
           type="text"
-          value={value}
+          value={query}
           onChange={(event: ChangeEvent<HTMLInputElement>) => handleInputChange(event.target.value)}
           onFocus={() => setShowSuggestions(true)}
           placeholder={placeholder}
@@ -97,11 +77,12 @@ export function AirportInput({ label, value, onChange, placeholder }: AirportInp
           {filteredAirports.slice(0, 8).map((airport) => (
             <button
               key={airport.code}
+              type="button"
               onClick={() => handleSelectAirport(airport)}
               className="w-full px-4 py-2.5 text-left hover:bg-gray-50 transition-colors border-b border-gray-100 last:border-b-0"
             >
               <div className="font-medium text-gray-900">
-                {airport.code} - {airport.city}
+                {getAirportDisplayLabel(airport)}
               </div>
               <div className="text-sm text-gray-600">{airport.name}</div>
             </button>

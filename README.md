@@ -17,6 +17,7 @@ At a high level, the app works like this:
    - `probability`
    - `riskLevel`
    - `explanation`
+   - optional `debug` details when explicitly requested
 5. The frontend renders that response directly in the UI.
 
 ### What the app is actually predicting
@@ -40,11 +41,19 @@ There are two important fallbacks in the stack:
 - If `backend/model.pkl` does not exist, the backend still returns predictions using a heuristic scoring path.
 - If the frontend cannot reach the backend, the frontend falls back to a local mock prediction function so the UI still appears usable.
 
+There is also a development-only debugging path:
+
+- In Vite development mode, the frontend asks the backend for extra scoring diagnostics.
+- When the backend receives `includeDebug: true`, it returns normalized input values, derived BTS-style features, heuristic contribution breakdowns, scoring path metadata, and notes about thresholds or defaulted values.
+- The frontend shows those details in a collapsible `Debug Details` panel so it is easier to tell whether the result came from the backend or the frontend fallback.
+
 So the repository supports a few different states:
 
 - Full stack with trained model: frontend -> backend -> trained model + heuristic blend
 - Full stack without trained model: frontend -> backend -> heuristic backend scoring
 - Frontend only or broken API connection: frontend -> mock prediction fallback
+
+In the repository's current default state, `backend/model.pkl` is not checked in, so local predictions run through the backend heuristic path unless you train and save a model artifact.
 
 ### Repository structure
 
@@ -70,10 +79,10 @@ Flight-Delay-Predictor/
 ### What each folder is responsible for
 
 - `flight-delay-prediction-form/`
-  The frontend app. It renders the form, calls the API, and displays the returned prediction.
+  The frontend app. It renders the form, normalizes airport input before submit, calls the API, displays the returned prediction, and exposes a dev-only debug panel when backend debug data is available.
 
 - `backend/`
-  The API and scoring layer. It exposes `GET /` and `POST /predict`, loads `model.pkl` if present, and contains the adaptation logic that maps form data to model-style features.
+  The API and scoring layer. It exposes `GET /` and `POST /predict`, loads `model.pkl` if present, maps normalized traveler inputs into model-style features, and can return detailed debug scoring metadata when requested.
 
 - `data-analysis/`
   The BTS dataset cleaning and feature engineering workflow. It prepares the cleaned CSV that `backend/train_model.py` uses for model training.
@@ -161,11 +170,20 @@ For a normal local smoke test:
 6. Click `Predict Delay Probability`.
 7. Confirm the result panel shows a probability, risk level, and explanation.
 
+In Vite dev mode, you can also expand `Debug Details` in the result panel to inspect:
+
+- whether the result came from the backend or the frontend mock fallback
+- whether the backend model was loaded
+- the normalized request values used for scoring
+- the derived feature values and heuristic breakdown
+- backend notes explaining defaulted values or thresholds that were not crossed
+
 ### How to tell which prediction path is being used
 
 - If the backend terminal logs a `POST /predict` request, the frontend reached the API.
 - If `http://localhost:8000/` reports `"modelLoaded": true`, the backend found `backend/model.pkl`.
 - If the backend is stopped and the frontend still shows a prediction, that result is coming from the frontend mock fallback.
+- In frontend dev mode, the `Debug Details` panel also labels the response source as either `Backend API` or `Frontend mock fallback`.
 
 ## Data and model workflow
 
@@ -214,13 +232,22 @@ This script:
   Main form container. Holds form state, submit behavior, loading state, and error state.
 
 - `flight-delay-prediction-form/src/services/prediction.ts`
-  Frontend prediction service. Calls the backend when available and falls back to a mock predictor on failure.
+  Frontend prediction service. Normalizes outbound airport values, requests backend debug data in dev mode, tracks whether the response came from the backend or the frontend fallback, and falls back to a mock predictor on failure.
 
 - `flight-delay-prediction-form/src/lib/api.ts`
   Small API client wrapper around `fetch`. Builds requests from `VITE_API_BASE_URL`.
 
+- `flight-delay-prediction-form/src/lib/airports.ts`
+  Shared airport list plus helpers for display labels and airport-code normalization.
+
 - `flight-delay-prediction-form/src/types/flight.ts`
-  Shared frontend request and response types used by the form and API service.
+  Shared frontend request and response types used by the form, API service, and debug UI.
+
+- `flight-delay-prediction-form/src/components/AirportInput.tsx`
+  Airport selector UI. Stores airport codes in form state while still showing user-friendly labels.
+
+- `flight-delay-prediction-form/src/components/PredictionResult.tsx`
+  Prediction result UI. Shows the main result and a dev-only debug panel when debug payloads are present.
 
 - `flight-delay-prediction-form/vite.config.ts`
   Vite config, including the dev server port (`3000`).
@@ -228,7 +255,7 @@ This script:
 ### Backend
 
 - `backend/main.py`
-  FastAPI app entry point. Defines request and response models, CORS config, feature adaptation logic, heuristic scoring, model loading, and the `/predict` endpoint.
+  FastAPI app entry point. Defines request and response models, CORS config, request normalization, feature adaptation logic, heuristic scoring, model loading, optional debug payload generation, and the `/predict` endpoint.
 
 - `backend/train_model.py`
   Training script for the BTS-derived model. Reads the cleaned dataset and writes `backend/model.pkl`.
@@ -245,7 +272,8 @@ This script:
 
 - The model is trained on BTS aggregate operational features rather than direct traveler-facing inputs.
 - Airport and weather handling are heuristic, not driven by live aviation or weather APIs.
-- The frontend fallback can make the UI appear functional even when the backend is unavailable, so testing should include checking backend logs or the backend health endpoint.
+- The backend still uses threshold-based heuristics when no trained model artifact is present, so some input changes will not affect the result unless they cross a scoring threshold.
+- The frontend fallback can make the UI appear functional even when the backend is unavailable, so testing should include checking backend logs, the backend health endpoint, or the dev-only debug panel.
 
 ## Current request/response contract
 
@@ -260,9 +288,12 @@ The frontend sends:
   "duration": "360",
   "temperature": "42",
   "precipitation": "rain",
-  "wind": "moderate"
+  "wind": "moderate",
+  "includeDebug": true
 }
 ```
+
+`includeDebug` is optional and is intended for development-time inspection.
 
 The backend returns:
 
@@ -270,6 +301,49 @@ The backend returns:
 {
   "probability": 47,
   "riskLevel": "moderate",
-  "explanation": "..."
+  "explanation": "...",
+  "debug": {
+    "pathUsed": "heuristic_only",
+    "modelLoaded": false,
+    "rawInput": {
+      "departureDate": "2026-03-15",
+      "departureTime": "08:30",
+      "originAirport": "JFK",
+      "destinationAirport": "LAX",
+      "durationMinutes": 360,
+      "temperatureF": 42,
+      "precipitation": "rain",
+      "wind": "moderate"
+    },
+    "derivedFeatures": {
+      "month": 3,
+      "arr_flights": 136,
+      "weather_delay_norm": 0.14,
+      "nas_delay_norm": 0.257,
+      "security_delay_norm": 0.0163,
+      "late_aircraft_delay_norm": 0.0925,
+      "total_delay_norm": 0.5058,
+      "route_congestion_score": 0.75,
+      "peak_departure_score": 0.35
+    },
+    "scoreBreakdown": {
+      "baseScore": 14,
+      "routeContribution": 22,
+      "peakContribution": 8,
+      "totalDelayContribution": 45,
+      "precipitationBonus": 6,
+      "windBonus": 5,
+      "unclampedTotal": 100,
+      "clampedTotal": 95
+    },
+    "modelScore": null,
+    "heuristicScore": 95,
+    "finalProbability": 95,
+    "notes": [
+      "No trained model artifact loaded; using heuristic scoring only."
+    ]
+  }
 }
 ```
+
+When `includeDebug` is omitted or `false`, the backend returns the same top-level `probability`, `riskLevel`, and `explanation` fields without the `debug` object.

@@ -1,19 +1,37 @@
 import { createApiClient } from '@/lib/api';
-import type { PredictionRequest, PredictionResponse, RiskLevel } from '@/types';
+import { normalizeAirportCode } from '@/lib/airports';
+import type { FlightFormData, PredictionRequest, PredictionResponse, RiskLevel } from '@/types';
 
 const apiClient = createApiClient();
+const shouldIncludeDebug = import.meta.env.DEV;
 
-export async function submitPrediction(data: PredictionRequest): Promise<PredictionResponse> {
+export function preparePredictionRequest(data: FlightFormData): PredictionRequest {
+  return {
+    ...data,
+    originAirport: normalizeAirportCode(data.originAirport),
+    destinationAirport: normalizeAirportCode(data.destinationAirport),
+    includeDebug: shouldIncludeDebug,
+  };
+}
+
+export async function submitPrediction(data: FlightFormData): Promise<PredictionResponse> {
+  const request = preparePredictionRequest(data);
+
   if (!apiClient.baseUrl) {
     console.info('API base URL not configured. Falling back to mock prediction.');
-    return generateMockPrediction(data);
+    return generateMockPrediction(request);
   }
 
   try {
-    return await apiClient.post<PredictionRequest, PredictionResponse>('/predict', data);
+    const response = await apiClient.post<PredictionRequest, PredictionResponse>('/predict', request);
+    return {
+      ...response,
+      source: 'backend',
+      submittedRequest: request,
+    };
   } catch (error) {
     console.warn('Prediction API request failed; using mock response instead.', error);
-    return generateMockPrediction(data);
+    return generateMockPrediction(request);
   }
 }
 
@@ -65,7 +83,13 @@ export function generateMockPrediction(data: PredictionRequest): PredictionRespo
 
   const guidance = getGuidance(riskLevel, data.originAirport, data.destinationAirport);
 
-  return { probability, riskLevel, explanation: `${baseExplanation}${guidance}` };
+  return {
+    probability,
+    riskLevel,
+    explanation: `${baseExplanation}${guidance}`,
+    source: 'mock_fallback',
+    submittedRequest: data,
+  };
 }
 
 const resolveRisk = (probability: number): RiskLevel => {
