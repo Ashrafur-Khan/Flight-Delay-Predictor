@@ -15,6 +15,7 @@ export interface FlightFormData {
   departureTime: string;
   originAirport: string;
   destinationAirport: string;
+  connections: string[];
   duration: string;
   temperature: string;
   precipitation: PrecipitationType;

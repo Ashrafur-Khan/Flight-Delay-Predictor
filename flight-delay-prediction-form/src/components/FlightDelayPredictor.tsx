@@ -1,20 +1,21 @@
-import { useState } from 'react';
-import { AirportInput } from './AirportInput';
-import { PredictionResult } from './PredictionResult';
-import { ChevronDown, ChevronUp, Plane } from 'lucide-react';
-import type { FlightFormData, PredictionResponse } from '@/types';
-import { submitPrediction } from '@/services/prediction';
+import { useState } from "react";
+import { AirportInput } from "./AirportInput";
+import { PredictionResult } from "./PredictionResult";
+import { ChevronDown, ChevronUp, Plane } from "lucide-react";
+import type { FlightFormData, PredictionResponse } from "@/types";
+import { submitPrediction } from "@/services/prediction";
 
 export function FlightDelayPredictor() {
   const [formData, setFormData] = useState<FlightFormData>({
-    departureDate: '',
-    departureTime: '',
-    originAirport: '',
-    destinationAirport: '',
-    duration: '',
-    temperature: '',
-    precipitation: 'none',
-    wind: 'calm',
+    departureDate: "",
+    departureTime: "",
+    originAirport: "",
+    destinationAirport: "",
+    connections: [],
+    duration: "",
+    temperature: "",
+    precipitation: "none",
+    wind: "calm",
   });
 
   const [showAdvanced, setShowAdvanced] = useState(false);
@@ -26,7 +27,29 @@ export function FlightDelayPredictor() {
     field: Field,
     value: FlightFormData[Field],
   ) => {
-    setFormData(prev => ({ ...prev, [field]: value }));
+    setFormData((prev) => ({ ...prev, [field]: value }));
+  };
+
+  const addConnection = () => {
+    setFormData((prev) => ({
+      ...prev,
+      connections: [...prev.connections, ""],
+    }));
+  };
+
+  const removeConnection = (index: number) => {
+    setFormData((prev) => ({
+      ...prev,
+      connections: prev.connections.filter((_, i) => i !== index),
+    }));
+  };
+
+  const updateConnection = (index: number, value: string) => {
+    setFormData((prev) => {
+      const updated = [...prev.connections];
+      updated[index] = value;
+      return { ...prev, connections: updated };
+    });
   };
 
   const handlePredict = async () => {
@@ -37,34 +60,43 @@ export function FlightDelayPredictor() {
       const result = await submitPrediction(formData);
       setPrediction(result);
     } catch (predictionError) {
-      console.error('Prediction request failed', predictionError);
-      setError('Unable to fetch a prediction right now. Please try again shortly.');
+      console.error("Prediction request failed", predictionError);
+      setError(
+        "Unable to fetch a prediction right now. Please try again shortly.",
+      );
       setPrediction(null);
     } finally {
       setIsLoading(false);
     }
   };
 
-  const isFormValid = formData.departureDate && 
-                       formData.departureTime && 
-                       formData.originAirport && 
-                       formData.destinationAirport;
+  const isFormValid =
+    formData.departureDate &&
+    formData.departureTime &&
+    formData.originAirport &&
+    formData.destinationAirport;
 
   return (
     <div className="max-w-7xl mx-auto px-4 py-8 sm:px-6 lg:px-8">
       <div className="mb-8 text-center">
         <div className="flex items-center justify-center gap-3 mb-2">
           <Plane className="w-8 h-8 text-blue-600" />
-          <h1 className="text-3xl font-bold text-gray-900">Flight Delay Predictor</h1>
+          <h1 className="text-3xl font-bold text-gray-900">
+            Flight Delay Predictor
+          </h1>
         </div>
-        <p className="text-gray-600">Enter your flight details to predict delay probability</p>
+        <p className="text-gray-600">
+          Enter your flight details to predict delay probability
+        </p>
       </div>
 
       <div className="grid lg:grid-cols-2 gap-8">
         {/* Input Panel */}
         <div className="bg-white rounded-lg shadow-md p-6">
-          <h2 className="text-xl font-semibold mb-6 text-gray-900">Flight Details</h2>
-          
+          <h2 className="text-xl font-semibold mb-6 text-gray-900">
+            Flight Details
+          </h2>
+
           {/* Core Inputs */}
           <div className="space-y-4">
             <div>
@@ -75,13 +107,17 @@ export function FlightDelayPredictor() {
                 <input
                   type="date"
                   value={formData.departureDate}
-                  onChange={(e) => handleInputChange('departureDate', e.target.value)}
+                  onChange={(e) =>
+                    handleInputChange("departureDate", e.target.value)
+                  }
                   className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                 />
                 <input
                   type="time"
                   value={formData.departureTime}
-                  onChange={(e) => handleInputChange('departureTime', e.target.value)}
+                  onChange={(e) =>
+                    handleInputChange("departureTime", e.target.value)
+                  }
                   className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                 />
               </div>
@@ -91,15 +127,57 @@ export function FlightDelayPredictor() {
               <AirportInput
                 label="Origin Airport"
                 value={formData.originAirport}
-                onChange={(value) => handleInputChange('originAirport', value)}
+                onChange={(value) => handleInputChange("originAirport", value)}
                 placeholder="e.g., JFK, New York"
               />
               <AirportInput
                 label="Destination Airport"
                 value={formData.destinationAirport}
-                onChange={(value) => handleInputChange('destinationAirport', value)}
+                onChange={(value) =>
+                  handleInputChange("destinationAirport", value)
+                }
                 placeholder="e.g., LAX, Los Angeles"
               />
+            </div>
+
+            {/* Connections */}
+            <div className="mt-4">
+              <div className="flex items-center justify-between mb-2">
+                <label className="text-sm font-medium text-gray-700">
+                  Connecting Flights (optional)
+                </label>
+
+                <button
+                  type="button"
+                  onClick={addConnection}
+                  className="text-sm text-blue-600 hover:text-blue-700"
+                >
+                  + Add connection
+                </button>
+              </div>
+
+              <div className="space-y-3">
+                {formData.connections.map((connection, index) => (
+                  <div key={index} className="flex gap-2 items-end">
+                    <div className="flex-1">
+                      <AirportInput
+                        label={`Connection ${index + 1}`}
+                        value={connection}
+                        onChange={(value) => updateConnection(index, value)}
+                        placeholder="e.g., ORD, Chicago"
+                      />
+                    </div>
+
+                    <button
+                      type="button"
+                      onClick={() => removeConnection(index)}
+                      className="px-3 py-2 text-sm bg-red-100 text-red-600 rounded-lg"
+                    >
+                      Remove
+                    </button>
+                  </div>
+                ))}
+              </div>
             </div>
           </div>
 
@@ -109,8 +187,12 @@ export function FlightDelayPredictor() {
               onClick={() => setShowAdvanced(!showAdvanced)}
               className="flex items-center gap-2 text-blue-600 hover:text-blue-700 font-medium text-sm transition-colors"
             >
-              {showAdvanced ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
-              {showAdvanced ? 'Hide' : 'Show'} advanced factors (optional)
+              {showAdvanced ? (
+                <ChevronUp className="w-4 h-4" />
+              ) : (
+                <ChevronDown className="w-4 h-4" />
+              )}
+              {showAdvanced ? "Hide" : "Show"} advanced factors (optional)
             </button>
 
             {showAdvanced && (
@@ -123,7 +205,9 @@ export function FlightDelayPredictor() {
                     <input
                       type="number"
                       value={formData.duration}
-                      onChange={(e) => handleInputChange('duration', e.target.value)}
+                      onChange={(e) =>
+                        handleInputChange("duration", e.target.value)
+                      }
                       placeholder="180"
                       min="0"
                       className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
@@ -142,7 +226,9 @@ export function FlightDelayPredictor() {
                     <input
                       type="number"
                       value={formData.temperature}
-                      onChange={(e) => handleInputChange('temperature', e.target.value)}
+                      onChange={(e) =>
+                        handleInputChange("temperature", e.target.value)
+                      }
                       placeholder="72"
                       className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                     />
@@ -159,7 +245,10 @@ export function FlightDelayPredictor() {
                   <select
                     value={formData.precipitation}
                     onChange={(e) =>
-                      handleInputChange('precipitation', e.target.value as FlightFormData['precipitation'])
+                      handleInputChange(
+                        "precipitation",
+                        e.target.value as FlightFormData["precipitation"],
+                      )
                     }
                     className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                   >
@@ -178,7 +267,10 @@ export function FlightDelayPredictor() {
                   <select
                     value={formData.wind}
                     onChange={(e) =>
-                      handleInputChange('wind', e.target.value as FlightFormData['wind'])
+                      handleInputChange(
+                        "wind",
+                        e.target.value as FlightFormData["wind"],
+                      )
                     }
                     className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                   >
@@ -197,7 +289,7 @@ export function FlightDelayPredictor() {
             disabled={!isFormValid || isLoading}
             className="mt-6 w-full bg-blue-600 text-white py-3 px-6 rounded-lg font-medium hover:bg-blue-700 disabled:bg-gray-300 disabled:cursor-not-allowed transition-colors"
           >
-            {isLoading ? 'Analyzing...' : 'Predict Delay Probability'}
+            {isLoading ? "Analyzing..." : "Predict Delay Probability"}
           </button>
           {error && (
             <p className="mt-3 text-sm text-red-600" role="alert">
@@ -208,8 +300,8 @@ export function FlightDelayPredictor() {
 
         {/* Result Panel */}
         <div className="lg:sticky lg:top-8 h-fit">
-          <PredictionResult 
-            prediction={prediction} 
+          <PredictionResult
+            prediction={prediction}
             isLoading={isLoading}
             hasSubmitted={prediction !== null || isLoading}
           />
