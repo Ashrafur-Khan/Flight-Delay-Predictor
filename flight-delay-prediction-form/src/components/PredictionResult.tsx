@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { AlertCircle, AlertTriangle, CheckCircle, ChevronDown, ChevronUp } from 'lucide-react';
-import type { PredictionResponse } from '@/types';
+import type { PredictionResponse, RiskLevel } from '@/types';
 
 interface PredictionResultProps {
   prediction: PredictionResponse | null;
@@ -105,6 +105,8 @@ export function PredictionResult({ prediction, isLoading, hasSubmitted }: Predic
         wind: prediction.submittedRequest.wind,
       }
     : null;
+  const itinerarySummary = prediction.itinerarySummary;
+  const hasConnectedItinerary = Boolean(itinerarySummary && itinerarySummary.legs.length > 0);
 
   return (
     <div className={`bg-white rounded-lg shadow-md p-8 border-2 ${getBorderColorClass()}`}>
@@ -128,6 +130,44 @@ export function PredictionResult({ prediction, isLoading, hasSubmitted }: Predic
           {prediction.explanation}
         </p>
       </div>
+
+      {itinerarySummary && itinerarySummary.legs.length > 0 && (
+        <div className="mt-6 rounded-lg border border-gray-200 bg-gray-50/80 p-5">
+          <div className="mb-4">
+            <h3 className="text-sm font-semibold uppercase tracking-wide text-gray-900">
+              Itinerary Breakdown
+            </h3>
+            <p className="mt-1 text-sm text-gray-600">
+              These segment scores explain the main connected-itinerary prediction shown above.
+            </p>
+          </div>
+
+          <div className="space-y-3">
+            {itinerarySummary.legs.map((leg, index) => (
+              <div
+                key={`${leg.from}-${leg.to}-${index}`}
+                className="rounded-lg border border-gray-200 bg-white px-4 py-3"
+              >
+                <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                  <div>
+                    <p className="text-xs font-medium uppercase tracking-wide text-gray-500">
+                      Leg {index + 1}
+                    </p>
+                    <p className="mt-1 text-sm font-semibold text-gray-900">
+                      {leg.from} to {leg.to}
+                    </p>
+                    <p className="mt-1 text-sm text-gray-600">{leg.explanation}</p>
+                  </div>
+
+                  <span className={`inline-flex items-center rounded-full border px-3 py-1 text-sm font-semibold ${getRiskBadgeClass(leg.riskLevel)}`}>
+                    {leg.probability}% {getShortRiskLabel(leg.riskLevel)}
+                  </span>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       {isDev && (
         <div className="mt-6 rounded-lg border border-slate-200 bg-slate-50">
@@ -163,11 +203,25 @@ export function PredictionResult({ prediction, isLoading, hasSubmitted }: Predic
                     items={[
                       ['Path used', prediction.debug.pathUsed],
                       ['Model loaded', String(prediction.debug.modelLoaded)],
+                      ...(hasConnectedItinerary
+                        ? [
+                            ['Displayed itinerary score', `${prediction.probability}%`],
+                            ['Raw backend/direct-route score', prediction.baseProbability === undefined ? 'Unavailable' : `${prediction.baseProbability}%`],
+                          ] as [string, string][]
+                        : []),
                       ['Model score', prediction.debug.modelScore === null ? 'None' : `${prediction.debug.modelScore}%`],
                       ['Heuristic score', `${prediction.debug.heuristicScore}%`],
                       ['Final probability', `${prediction.debug.finalProbability}%`],
                     ]}
                   />
+                  {hasConnectedItinerary && prediction.baseExplanation && (
+                    <div className="rounded-md border border-slate-200 bg-white px-3 py-3">
+                      <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                        Raw Direct-Route Explanation
+                      </p>
+                      <p className="mt-2 text-sm text-slate-700">{prediction.baseExplanation}</p>
+                    </div>
+                  )}
                   <DebugBlock title="Normalized Raw Input" value={prediction.debug.rawInput} />
                   <DebugBlock title="Derived Features" value={prediction.debug.derivedFeatures} />
                   <DebugBlock title="Heuristic Breakdown" value={prediction.debug.scoreBreakdown} />
@@ -185,9 +239,19 @@ export function PredictionResult({ prediction, isLoading, hasSubmitted }: Predic
                   )}
                 </>
               ) : (
-                <p className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-amber-800">
-                  No backend debug payload was returned for this prediction.
-                </p>
+                <>
+                  {hasConnectedItinerary && prediction.baseProbability !== undefined && (
+                    <DebugGrid
+                      items={[
+                        ['Displayed itinerary score', `${prediction.probability}%`],
+                        ['Raw direct-route score', `${prediction.baseProbability}%`],
+                      ]}
+                    />
+                  )}
+                  <p className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-amber-800">
+                    No backend debug payload was returned for this prediction.
+                  </p>
+                </>
               )}
             </div>
           )}
@@ -201,6 +265,18 @@ export function PredictionResult({ prediction, isLoading, hasSubmitted }: Predic
       </div>
     </div>
   );
+}
+
+function getRiskBadgeClass(riskLevel: RiskLevel) {
+  if (riskLevel === 'low') return 'border-green-200 bg-green-50 text-green-700';
+  if (riskLevel === 'moderate') return 'border-yellow-200 bg-yellow-50 text-yellow-700';
+  return 'border-red-200 bg-red-50 text-red-700';
+}
+
+function getShortRiskLabel(riskLevel: RiskLevel) {
+  if (riskLevel === 'low') return 'Low Risk';
+  if (riskLevel === 'moderate') return 'Moderate Risk';
+  return 'High Risk';
 }
 
 function DebugBlock({ title, value }: { title: string; value: unknown }) {
