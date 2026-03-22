@@ -5,7 +5,6 @@ from typing import Optional, Literal, Dict, Any
 import joblib
 from pathlib import Path
 import datetime
-
 BASE_DIR = Path(__file__).resolve().parent
 MODEL_PATH = BASE_DIR / "model.pkl"
 
