@@ -22,8 +22,31 @@ export interface FlightFormData {
   wind: WindCondition;
 }
 
-export interface PredictionRequest extends FlightFormData {
+export interface PredictionRequest {
+  departureDate: string;
+  departureTime: string;
+  originAirport: string;
+  destinationAirport: string;
+  duration: string;
+  temperature: string;
+  precipitation: PrecipitationType;
+  wind: WindCondition;
   includeDebug?: boolean;
+}
+
+export interface LegPrediction {
+  from: string;
+  to: string;
+  probability: number;
+  riskLevel: RiskLevel;
+  explanation: string;
+}
+
+export interface ItineraryPredictionSummary {
+  legs: LegPrediction[];
+  aggregateProbability: number;
+  aggregateRiskLevel: RiskLevel;
+  aggregateExplanation: string;
 }
 
 export interface PredictionDebugRawInput {
@@ -76,7 +99,11 @@ export interface PredictionResponse {
   probability: number;
   riskLevel: RiskLevel;
   explanation: string;
+  baseProbability?: number;
+  baseRiskLevel?: RiskLevel;
+  baseExplanation?: string;
   debug?: PredictionDebugInfo;
+  itinerarySummary?: ItineraryPredictionSummary;
   source?: PredictionSource;
   submittedRequest?: PredictionRequest;
 }
