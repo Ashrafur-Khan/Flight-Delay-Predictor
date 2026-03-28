@@ -75,6 +75,14 @@ So the repository supports a few different states:
 
 In the repository's current default state, `backend/model.pkl` is not checked in, so local predictions use the backend heuristic fallback unless you train and save a model artifact.
 
+For a fresh clone, you should assume these generated artifacts are missing unless you create them yourself:
+
+- `backend/model.pkl`
+- `data-analysis/cleaned_bts_flight_delay_data.csv`
+- `data-analysis/cleaned_bts_flight_delay_data.metadata.json`
+
+Those files are intentionally gitignored because they are generated from local training data.
+
 ## Repository structure
 
 ```text
@@ -149,7 +157,50 @@ source .venv/bin/activate
 pip install -r requirements.txt
 ```
 
-### 2. Frontend environment
+### 2. Generate the dataset and model artifact
+
+Before you expect the backend to use a trained model, you need to create the cleaned dataset and train the model artifact.
+
+Important:
+
+- `backend/model.pkl` is not committed to the repo.
+- `data-analysis/cleaned_bts_flight_delay_data.csv` is not committed to the repo.
+- `data-analysis/cleaned_bts_flight_delay_data.metadata.json` is not committed to the repo.
+- If you skip this step, the backend still runs locally, but it uses the heuristic fallback path instead of the trained model.
+
+If you already have a raw BTS export, generate the cleaned dataset from the repo root:
+
+```bash
+source .venv/bin/activate
+python3 data-analysis/flight_delay_bts_analysis.py --input /path/to/Airline_Delay_Cause.csv
+```
+
+If you are using the local BTS file currently present in this repo, the command is:
+
+```bash
+source .venv/bin/activate
+python3 data-analysis/flight_delay_bts_analysis.py --input backend/data/Airline_Delay_Cause.csv
+```
+
+This creates:
+
+- `data-analysis/cleaned_bts_flight_delay_data.csv`
+- `data-analysis/cleaned_bts_flight_delay_data.metadata.json`
+
+Then train the backend model artifact:
+
+```bash
+source .venv/bin/activate
+python3 backend/train_model.py
+```
+
+This creates:
+
+- `backend/model.pkl`
+
+After training, you can verify the artifact exists by starting the backend and checking that `GET /` reports `"modelLoaded": true`.
+
+### 3. Frontend environment
 
 In a separate terminal:
 
@@ -188,6 +239,12 @@ The local app endpoints are:
 - frontend: <http://localhost:3000>
 - backend: <http://localhost:8000>
 - backend health endpoint: <http://localhost:8000/>
+
+### What to expect after setup
+
+- If you completed the dataset-generation and training steps, the backend should score requests with the trained model artifact.
+- If you did not complete those steps, the backend can still run in local development, but it will use the heuristic fallback estimator instead of the trained model.
+- If the frontend cannot reach the backend at all, it can still display predictions using its own frontend mock fallback.
 
 ## End-to-end test flow
 
