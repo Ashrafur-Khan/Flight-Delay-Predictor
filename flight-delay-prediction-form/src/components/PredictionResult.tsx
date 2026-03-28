@@ -203,17 +203,22 @@ export function PredictionResult({ prediction, isLoading, hasSubmitted }: Predic
                     items={[
                       ['Path used', prediction.debug.pathUsed],
                       ['Model loaded', String(prediction.debug.modelLoaded)],
+                      ['Model version', prediction.debug.modelVersion ?? 'Unavailable'],
+                      ['Dataset version', prediction.debug.datasetVersion ?? 'Unavailable'],
                       ...(hasConnectedItinerary
                         ? [
                             ['Displayed itinerary score', `${prediction.probability}%`],
                             ['Raw backend/direct-route score', prediction.baseProbability === undefined ? 'Unavailable' : `${prediction.baseProbability}%`],
                           ] as [string, string][]
                         : []),
-                      ['Model score', prediction.debug.modelScore === null ? 'None' : `${prediction.debug.modelScore}%`],
-                      ['Heuristic score', `${prediction.debug.heuristicScore}%`],
                       ['Final probability', `${prediction.debug.finalProbability}%`],
                     ]}
                   />
+                  {prediction.debug.fallbackReason && (
+                    <p className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-amber-800">
+                      {prediction.debug.fallbackReason}
+                    </p>
+                  )}
                   {hasConnectedItinerary && prediction.baseExplanation && (
                     <div className="rounded-md border border-slate-200 bg-white px-3 py-3">
                       <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
@@ -224,7 +229,6 @@ export function PredictionResult({ prediction, isLoading, hasSubmitted }: Predic
                   )}
                   <DebugBlock title="Normalized Raw Input" value={prediction.debug.rawInput} />
                   <DebugBlock title="Derived Features" value={prediction.debug.derivedFeatures} />
-                  <DebugBlock title="Heuristic Breakdown" value={prediction.debug.scoreBreakdown} />
                   {prediction.debug.notes.length > 0 && (
                     <div>
                       <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">Notes</p>

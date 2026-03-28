@@ -55,38 +55,50 @@ This means connected-flight scoring does not change the backend model input toda
 
 There are three important fallbacks in the current stack:
 
-- If `backend/model.pkl` does not exist, the backend still returns predictions using a heuristic scoring path.
+- If `backend/model.pkl` does not exist, the backend can return predictions using a clearly labeled heuristic fallback path in local or development environments.
 - If the frontend cannot reach the backend, the frontend falls back to a local mock prediction function so the UI still appears usable.
 - If the user adds layovers, the itinerary score is always computed in the frontend, regardless of whether the direct-route prediction came from the backend or the frontend fallback.
 
 There is also a development-only debugging path:
 
 - In Vite development mode, the frontend asks the backend for extra scoring diagnostics.
-- When the backend receives `includeDebug: true`, it returns normalized input values, derived BTS-style features, heuristic contribution breakdowns, scoring path metadata, and notes about thresholds or defaulted values.
+- When the backend receives `includeDebug: true`, it returns normalized input values, derived BTS-style features, model and dataset metadata, scoring path metadata, fallback reasons when relevant, and notes about thresholds or defaulted values.
 - The frontend shows those details in a collapsible `Debug Details` panel so it is easier to tell whether the result came from the backend or the frontend fallback.
 - When layovers are present, the debug panel also shows the displayed itinerary score alongside the raw backend or direct-route score.
 
 So the repository supports a few different states:
 
-- Full stack with trained model: frontend -> backend -> trained model + heuristic blend
-- Full stack without trained model: frontend -> backend -> heuristic backend scoring
+- Full stack with trained model: frontend -> backend -> trained model artifact
+- Full stack without trained model in local/dev mode: frontend -> backend -> heuristic backend fallback
 - Frontend only or broken API connection: frontend -> mock prediction fallback
 - Connected itinerary mode: frontend itinerary scoring layered on top of any of the three paths above
 
-In the repository's current default state, `backend/model.pkl` is not checked in, so local predictions run through the backend heuristic path unless you train and save a model artifact.
+In the repository's current default state, `backend/model.pkl` is not checked in, so local predictions use the backend heuristic fallback unless you train and save a model artifact.
 
 ## Repository structure
 
 ```text
 Flight-Delay-Predictor/
 ├── backend/
+│   ├── config.py
+│   ├── feature_adapter.py
 │   ├── main.py
+│   ├── model_service.py
+│   ├── normalization.py
+│   ├── schemas.py
+│   ├── service.py
+│   ├── training.py
 │   ├── train_model.py
 │   └── model.pkl
 ├── data-analysis/
 │   ├── data-analysis.md
 │   ├── flight_delay_bts_analysis.py
-│   └── cleaned_bts_flight_delay_data.csv
+│   ├── cleaned_bts_flight_delay_data.csv
+│   └── cleaned_bts_flight_delay_data.metadata.json
+├── tests/
+│   ├── test_adapter.py
+│   ├── test_api.py
+│   └── test_data_pipeline.py
 ├── flight-delay-prediction-form/
 │   ├── src/
 │   ├── .env.example
@@ -102,10 +114,13 @@ Flight-Delay-Predictor/
   The frontend app. It renders the form, normalizes airport input before submit, supports connected-flight layovers, calls the API, displays itinerary and direct-route results, and exposes a dev-only debug panel when backend debug data is available.
 
 - `backend/`
-  The API and scoring layer. It exposes `GET /` and `POST /predict`, loads `model.pkl` if present, maps normalized traveler inputs into model-style features, and can return detailed debug scoring metadata when requested.
+  The API and scoring layer. It exposes `GET /` and `POST /predict`, validates requests, normalizes user inputs, adapts them into BTS-style model features, loads a versioned model artifact when present, and can return structured debug metadata when requested.
 
 - `data-analysis/`
-  The BTS dataset cleaning and feature engineering workflow. It prepares the cleaned CSV that `backend/train_model.py` uses for model training.
+  The BTS dataset cleaning and feature engineering workflow. It prepares the cleaned CSV and metadata that `backend/train_model.py` uses for model training.
+
+- `tests/`
+  Backend coverage for the adapter, the dataset pipeline, and the FastAPI surface.
 
 ## Dev Notes
 
@@ -196,10 +211,11 @@ In Vite dev mode, you can also expand `Debug Details` in the result panel to ins
 
 - whether the result came from the backend or the frontend mock fallback
 - whether the backend model was loaded
+- the model version and dataset version used for scoring when available
 - the normalized request values used for scoring
-- the derived feature values and heuristic breakdown
+- the derived feature values
 - the raw direct-route score versus the displayed itinerary score when layovers are present
-- backend notes explaining defaulted values or thresholds that were not crossed
+- fallback reasons or backend notes explaining defaulted values or thresholds that were not crossed
 
 ### How to tell which prediction path is being used
 
@@ -215,9 +231,9 @@ The model training flow is:
 
 1. Start with a raw BTS CSV export.
 2. Run `data-analysis/flight_delay_bts_analysis.py`.
-3. Generate `data-analysis/cleaned_bts_flight_delay_data.csv`.
+3. Generate `data-analysis/cleaned_bts_flight_delay_data.csv` and `data-analysis/cleaned_bts_flight_delay_data.metadata.json`.
 4. Run `backend/train_model.py`.
-5. Save the trained model as `backend/model.pkl`.
+5. Save the trained model artifact as `backend/model.pkl`.
 
 ### Generate the cleaned dataset
 
@@ -228,12 +244,13 @@ python3 data-analysis/flight_delay_bts_analysis.py --input /path/to/Airline_Dela
 This script:
 
 - reads the raw BTS CSV
+- validates that required BTS columns are present
 - drops a few unneeded columns
 - filters out rows with zero arriving flights
 - fills missing delay values
 - creates normalized delay features
-- labels rows with `high_delay`
-- writes the cleaned dataset to `data-analysis/cleaned_bts_flight_delay_data.csv`
+- labels rows with `delay_event`
+- writes the cleaned dataset plus metadata describing dataset version, target definition, feature names, and split strategy
 
 ### Train the model
 
@@ -243,10 +260,10 @@ python3 backend/train_model.py
 
 This script:
 
-- loads `data-analysis/cleaned_bts_flight_delay_data.csv`
-- trains both logistic regression and random forest models
-- prints their test accuracy
-- saves the random forest model to `backend/model.pkl`
+- loads the cleaned dataset and dataset metadata
+- trains logistic regression and random forest candidate models
+- calibrates the selected model probabilities
+- saves a versioned model artifact to `backend/model.pkl` with feature order and training metadata
 
 ## Key files
 
@@ -279,10 +296,16 @@ This script:
 ### Backend
 
 - `backend/main.py`
-  FastAPI app entry point. Defines request and response models, CORS config, request normalization, feature adaptation logic, heuristic scoring, model loading, optional debug payload generation, and the `/predict` endpoint.
+  FastAPI app entry point. Wires up CORS, the health endpoint, and the `/predict` endpoint.
+
+- `backend/service.py`
+  Orchestrates request normalization, feature adaptation, trained-model inference, local heuristic fallback, and debug response assembly.
+
+- `backend/feature_adapter.py`
+  Converts traveler-facing single-leg inputs into the fixed BTS-style feature vector expected by the trained model.
 
 - `backend/train_model.py`
-  Training script for the BTS-derived model. Reads the cleaned dataset and writes `backend/model.pkl`.
+  Training entry point for the BTS-derived model artifact.
 
 ### Data analysis
 
@@ -296,7 +319,7 @@ This script:
 
 - The backend model is trained on BTS aggregate operational features rather than direct traveler-facing inputs.
 - Airport and weather handling are heuristic, not driven by live aviation or weather APIs.
-- The backend still uses threshold-based heuristics when no trained model artifact is present, so some input changes will not affect the result unless they cross a scoring threshold.
+- The backend still uses a local/dev heuristic fallback when no trained model artifact is present.
 - Connected-flight scoring is frontend-only and heuristic. Layovers are not sent to the backend model, and the itinerary score is not a learned multi-leg prediction.
 - The frontend fallback can make the UI appear functional even when the backend is unavailable, so testing should include checking backend logs, the backend health endpoint, or the dev-only debug panel.
 
@@ -334,8 +357,10 @@ The backend returns:
   "riskLevel": "moderate",
   "explanation": "...",
   "debug": {
-    "pathUsed": "heuristic_only",
+    "pathUsed": "heuristic_fallback",
     "modelLoaded": false,
+    "modelVersion": null,
+    "datasetVersion": null,
     "rawInput": {
       "departureDate": "2026-03-15",
       "departureTime": "08:30",
@@ -357,21 +382,10 @@ The backend returns:
       "route_congestion_score": 0.75,
       "peak_departure_score": 0.35
     },
-    "scoreBreakdown": {
-      "baseScore": 14,
-      "routeContribution": 22,
-      "peakContribution": 8,
-      "totalDelayContribution": 45,
-      "precipitationBonus": 6,
-      "windBonus": 5,
-      "unclampedTotal": 100,
-      "clampedTotal": 95
-    },
-    "modelScore": null,
-    "heuristicScore": 95,
     "finalProbability": 95,
+    "fallbackReason": "No compatible trained model artifact is available; using the development fallback estimator.",
     "notes": [
-      "No trained model artifact loaded; using heuristic scoring only."
+      "No compatible trained model artifact is available; using the development fallback estimator."
     ]
   }
 }
