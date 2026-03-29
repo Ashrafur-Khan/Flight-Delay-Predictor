@@ -42,14 +42,14 @@ def train_and_save_model(
     artifact_path: Path = ARTIFACT_PATH,
 ):
 
-    print("\n📥 Loading dataset...")
+    print("\nLoading dataset...")
     df = pd.read_csv(dataset_path)
 
     # -----------------------------
-    # 🚀 SPEED FIX: SAMPLE DATA
+    # SPEED FIX: SAMPLE DATA
     # -----------------------------
     if len(df) > 200000:
-        print(f"⚡ Sampling dataset (original size: {len(df)})")
+        print(f"Sampling dataset (original size: {len(df)})")
         df = df.sample(n=200000, random_state=42)
 
     # -----------------------------
@@ -64,7 +64,7 @@ def train_and_save_model(
     X = df[MODEL_FEATURES]
     y = df["target"]
 
-    print("\n📊 Target distribution:")
+    print("\nTarget distribution:")
     print(y.value_counts())
 
     # -----------------------------
@@ -107,7 +107,7 @@ def train_and_save_model(
     best_name = ""
     best_auc = -1
 
-    print("\n🚀 Training models...")
+    print("\nTraining models...")
 
     for name, model in models.items():
         model.fit(X_train_scaled, y_train)
@@ -115,7 +115,7 @@ def train_and_save_model(
         probs = model.predict_proba(X_test_scaled)[:, 1]
         auc = roc_auc_score(y_test, probs)
 
-        print(f"✅ {name} AUC: {auc:.4f}")
+        print(f"{name} AUC: {auc:.4f}")
 
         if auc > best_auc:
             best_auc = auc
@@ -136,8 +136,8 @@ def train_and_save_model(
         "auc": float(auc),
     }
 
-    print("\n🏆 Best Model:", best_name)
-    print("📈 Metrics:", metrics)
+    print("\nBest Model:", best_name)
+    print("Metrics:", metrics)
 
     # -----------------------------
     # SAVE ARTIFACT
@@ -155,7 +155,7 @@ def train_and_save_model(
     artifact_path.parent.mkdir(parents=True, exist_ok=True)
     joblib.dump(artifact, artifact_path)
 
-    print(f"\n💾 Model saved to {artifact_path}")
+    print(f"\nModel saved to {artifact_path}")
 
     return artifact
 
@@ -196,7 +196,7 @@ def predict(artifact, input_data: dict):
 if __name__ == "__main__":
     artifact = train_and_save_model()
 
-    print("\n🧪 Sample Prediction:")
+    print("\nSample Prediction:")
 
     sample = {
         "month": 3,

@@ -18,13 +18,13 @@ def main():
     raw_data = Path("data-analysis/flight_data_2024.csv")
     cleaned_data = Path("data-analysis/cleaned_flight_delay_data.csv")
 
-    print("🧹 Cleaning dataset...")
+    print("Cleaning dataset...")
     build_versioned_dataset(raw_data, cleaned_data)
 
-    print("🚀 Training model...")
+    print("Training model...")
     artifact = train_and_save_model(cleaned_data)
 
-    print("\n✅ DONE")
+    print("\nDONE")
     print("Best Model:", artifact["model_name"])
     print("AUC:", artifact["metrics"]["auc"])
 
