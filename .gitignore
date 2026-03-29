@@ -20,6 +20,7 @@ venv/
 # Generated backend / analysis artifacts
 backend/model.pkl
 data-analysis/cleaned_bts_flight_delay_data.csv
+data-analysis/cleaned_bts_flight_delay_data.metadata.json
 
 # Env files
 .env
