@@ -22,6 +22,17 @@ export interface FlightFormData {
   wind: WindCondition;
 }
 
+export type RouteValidationIssueCode =
+  | 'same_origin_destination'
+  | 'duplicate_consecutive_stop';
+
+export interface RouteValidationIssue {
+  code: RouteValidationIssueCode;
+  message: string;
+  stopIndex?: number;
+  field?: 'originAirport' | 'destinationAirport' | 'connections';
+}
+
 export interface PredictionRequest {
   departureDate: string;
   departureTime: string;

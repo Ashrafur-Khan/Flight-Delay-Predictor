@@ -1,9 +1,9 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { AirportInput } from './AirportInput';
 import { PredictionResult } from './PredictionResult';
-import { ChevronDown, ChevronUp, Plane, Plus, X } from 'lucide-react';
+import { AlertTriangle, ChevronDown, ChevronUp, Plane, Plus, X } from 'lucide-react';
 import type { FlightFormData, PredictionResponse } from '@/types';
-import { submitPrediction } from '@/services/prediction';
+import { submitPrediction, validateRoute } from '@/services/prediction';
 
 const formatStopLabel = (value: string, fallback: string) => value.trim() || fallback;
 
@@ -24,6 +24,14 @@ export function FlightDelayPredictor() {
   const [prediction, setPrediction] = useState<PredictionResponse | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const routeValidationIssues = validateRoute(formData);
+
+  useEffect(() => {
+    if (routeValidationIssues.length > 0) {
+      setPrediction(null);
+      setError(null);
+    }
+  }, [formData.originAirport, formData.destinationAirport, formData.connections, routeValidationIssues.length]);
 
   const handleInputChange = <Field extends keyof FlightFormData>(
     field: Field,
@@ -56,6 +64,12 @@ export function FlightDelayPredictor() {
   };
 
   const handlePredict = async () => {
+    if (routeValidationIssues.length > 0) {
+      setError(routeValidationIssues[0]?.message ?? 'Please enter a valid flight.');
+      setPrediction(null);
+      return;
+    }
+
     setIsLoading(true);
     setError(null);
 
@@ -77,6 +91,7 @@ export function FlightDelayPredictor() {
                        formData.departureTime && 
                        formData.originAirport && 
                        formData.destinationAirport;
+  const canPredict = Boolean(isFormValid) && routeValidationIssues.length === 0;
   const routeStops = [
     { label: 'Origin', value: formData.originAirport, fallback: 'Select origin' },
     ...formData.connections.map((connection, index) => ({
@@ -216,6 +231,27 @@ export function FlightDelayPredictor() {
                   No layovers added. Keep this empty for a direct route.
                 </p>
               )}
+
+              {routeValidationIssues.length > 0 && (
+                <div
+                  className="mt-4 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-amber-900"
+                  role="alert"
+                >
+                  <div className="flex items-start gap-3">
+                    <AlertTriangle className="mt-0.5 h-5 w-5 shrink-0" />
+                    <div>
+                      <p className="text-sm font-semibold">Enter a valid flight</p>
+                      <ul className="mt-2 space-y-1 text-sm">
+                        {routeValidationIssues.map((issue) => (
+                          <li key={`${issue.code}-${issue.stopIndex ?? 'none'}`}>
+                            {issue.message}
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  </div>
+                </div>
+              )}
             </div>
           </div>
 
@@ -316,7 +352,7 @@ export function FlightDelayPredictor() {
           {/* Predict Button */}
           <button
             onClick={handlePredict}
-            disabled={!isFormValid || isLoading}
+            disabled={!canPredict || isLoading}
             className="mt-6 w-full bg-blue-600 text-white py-3 px-6 rounded-lg font-medium hover:bg-blue-700 disabled:bg-gray-300 disabled:cursor-not-allowed transition-colors"
           >
             {isLoading ? 'Analyzing...' : 'Predict Delay Probability'}

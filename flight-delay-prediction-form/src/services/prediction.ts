@@ -6,6 +6,7 @@ import type {
   LegPrediction,
   PredictionRequest,
   PredictionResponse,
+  RouteValidationIssue,
   RiskLevel,
 } from '@/types';
 
@@ -17,6 +18,12 @@ const MEDIUM_TRAFFIC_AIRPORTS = new Set(['BOS', 'CLT', 'EWR', 'IAH', 'MIA', 'PHX
 interface PreparedFlightData {
   request: PredictionRequest;
   normalizedConnections: string[];
+}
+
+interface RouteStop {
+  code: string;
+  label: string;
+  stopIndex: number;
 }
 
 export function preparePredictionRequest(data: FlightFormData): PreparedFlightData {
@@ -34,6 +41,57 @@ export function preparePredictionRequest(data: FlightFormData): PreparedFlightDa
     },
     normalizedConnections: data.connections.map(normalizeAirportCode),
   };
+}
+
+export function validateRoute(data: FlightFormData): RouteValidationIssue[] {
+  const { request, normalizedConnections } = preparePredictionRequest(data);
+  const issues: RouteValidationIssue[] = [];
+  const normalizedOrigin = request.originAirport;
+  const normalizedDestination = request.destinationAirport;
+
+  if (
+    normalizedOrigin
+    && normalizedDestination
+    && normalizedConnections.filter(Boolean).length === 0
+    && normalizedOrigin === normalizedDestination
+  ) {
+    issues.push({
+      code: 'same_origin_destination',
+      field: 'destinationAirport',
+      stopIndex: 1,
+      message: 'Origin and destination cannot be the same airport for a direct flight.',
+    });
+  }
+
+  const stops: RouteStop[] = [
+    { code: normalizedOrigin, label: 'Origin', stopIndex: 0 },
+    ...normalizedConnections
+      .map((code, index) => ({
+        code,
+        label: `Layover ${index + 1}`,
+        stopIndex: index + 1,
+      }))
+      .filter((stop) => stop.code),
+    { code: normalizedDestination, label: 'Destination', stopIndex: normalizedConnections.length + 1 },
+  ].filter((stop) => stop.code);
+
+  for (let index = 0; index < stops.length - 1; index += 1) {
+    const currentStop = stops[index];
+    const nextStop = stops[index + 1];
+
+    if (!currentStop || !nextStop || currentStop.code !== nextStop.code) {
+      continue;
+    }
+
+    issues.push({
+      code: 'duplicate_consecutive_stop',
+      field: nextStop.label.startsWith('Layover') ? 'connections' : 'destinationAirport',
+      stopIndex: nextStop.stopIndex,
+      message: `${nextStop.label} creates an impossible segment: ${currentStop.code} to ${nextStop.code}. Enter a different airport.`,
+    });
+  }
+
+  return issues;
 }
 
 export async function submitPrediction(data: FlightFormData): Promise<PredictionResponse> {

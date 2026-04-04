@@ -40,6 +40,7 @@ Those derived values are then used to score the request.
 The connected flights feature is currently a frontend-only itinerary layer:
 
 - The form lets the user add layovers in itinerary order.
+- The frontend blocks clearly impossible routes such as `LAX -> LAX` before any scoring request is made.
 - The backend request remains a single direct-route prediction from origin to final destination.
 - When layovers are present, the frontend generates a score for each leg and an aggregate itinerary score.
 - The displayed `probability`, `riskLevel`, and `explanation` are replaced with the itinerary-level result.
