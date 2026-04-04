@@ -6,11 +6,13 @@ import type {
   LegPrediction,
   PredictionRequest,
   PredictionResponse,
+  RouteValidationIssue,
   RiskLevel,
 } from '@/types';
 
 const apiClient = createApiClient();
 const shouldIncludeDebug = import.meta.env.DEV;
+
 const HIGH_TRAFFIC_AIRPORTS = new Set(['ATL', 'LAX', 'ORD', 'DFW', 'DEN', 'JFK', 'SFO', 'SEA', 'MCO', 'LAS']);
 const MEDIUM_TRAFFIC_AIRPORTS = new Set(['BOS', 'CLT', 'EWR', 'IAH', 'MIA', 'PHX', 'MSP', 'DTW', 'PHL', 'BWI']);
 
@@ -36,12 +38,80 @@ export function preparePredictionRequest(data: FlightFormData): PreparedFlightDa
   };
 }
 
+export function validateRoute(data: FlightFormData): RouteValidationIssue[] {
+  const { request, normalizedConnections } = preparePredictionRequest(data);
+  const issues: RouteValidationIssue[] = [];
+
+  const origin = request.originAirport;
+  const destination = request.destinationAirport;
+  const layovers = normalizedConnections.filter(Boolean);
+
+  const route = [origin, ...layovers, destination].filter(Boolean);
+
+  // 1. Direct same airport
+  if (route.length === 2 && origin === destination) {
+    issues.push({
+      code: 'same_origin_destination',
+      field: 'destinationAirport',
+      stopIndex: 1,
+      message: 'Origin and destination cannot be the same airport for a direct flight.',
+    });
+  }
+
+  // 2. All same airport
+  if (route.length > 1 && new Set(route).size === 1) {
+    issues.push({
+      code: 'all_same_airport',
+      field: 'destinationAirport',
+      stopIndex: route.length - 1,
+      message: 'Origin, layovers, and destination cannot all be the same airport.',
+    });
+  }
+
+  // 3. Consecutive duplicates
+  for (let i = 0; i < route.length - 1; i++) {
+    if (route[i] === route[i + 1]) {
+      issues.push({
+        code: 'duplicate_consecutive_stop',
+        field: i === route.length - 2 ? 'destinationAirport' : 'connections',
+        stopIndex: i + 1,
+        message: `Invalid segment: ${route[i]} → ${route[i + 1]}. Enter a different airport.`,
+      });
+    }
+  }
+
+  // 4. Loop detection
+  const visited = new Set<string>();
+  route.forEach((airport, index) => {
+    if (visited.has(airport)) {
+      issues.push({
+        code: 'loop_detected',
+        field: index === route.length - 1 ? 'destinationAirport' : 'connections',
+        stopIndex: index,
+        message: 'Itinerary cannot revisit the same airport. Remove duplicate stops.',
+      });
+    }
+    visited.add(airport);
+  });
+
+  // 5. Return to origin with layovers
+  if (layovers.length > 0 && origin === destination) {
+    issues.push({
+      code: 'returns_to_origin',
+      field: 'destinationAirport',
+      stopIndex: route.length - 1,
+      message: 'Layover route cannot return to the origin airport. Choose a different destination.',
+    });
+  }
+
+  return issues;
+}
+
 export async function submitPrediction(data: FlightFormData): Promise<PredictionResponse> {
   const { request, normalizedConnections } = preparePredictionRequest(data);
   const itinerarySummary = buildItinerarySummary(request, normalizedConnections);
 
   if (!apiClient.baseUrl) {
-    console.info('API base URL not configured. Falling back to mock prediction.');
     return finalizePrediction(generateMockPrediction(request), itinerarySummary);
   }
 
@@ -52,69 +122,41 @@ export async function submitPrediction(data: FlightFormData): Promise<Prediction
       source: 'backend',
       submittedRequest: request,
     }, itinerarySummary);
-  } catch (error) {
-    console.warn('Prediction API request failed; using mock response instead.', error);
+  } catch {
     return finalizePrediction(generateMockPrediction(request), itinerarySummary);
   }
 }
 
-export function generateMockPrediction(
-  data: PredictionRequest,
-): PredictionResponse {
+/* ===========================
+   MOCK + HEURISTIC SCORING
+=========================== */
+
+export function generateMockPrediction(data: PredictionRequest): PredictionResponse {
   const { probability, riskLevel, factors } = computeLegScore(data, data.originAirport, data.destinationAirport);
 
-  const baseExplanation = factors.length > 0
-    ? `Based on the flight details, there's a ${riskLevel} delay risk due to ${factors.join(', ')}. `
-    : 'Based on the flight details, conditions appear favorable. ';
-
-  const guidance = getGuidance(riskLevel, data.originAirport, data.destinationAirport);
+  const explanation = factors.length
+    ? `Based on the flight details, there's a ${riskLevel} delay risk due to ${factors.join(', ')}.`
+    : 'Conditions appear stable for this flight.';
 
   return {
     probability,
     riskLevel,
-    explanation: `${baseExplanation}${guidance}`,
+    explanation,
     source: 'mock_fallback',
     submittedRequest: data,
   };
 }
 
-const resolveRisk = (probability: number): RiskLevel => {
-  if (probability < 30) return 'low';
-  if (probability < 70) return 'moderate';
-  return 'high';
-};
+const resolveRisk = (p: number): RiskLevel => (p < 30 ? 'low' : p < 70 ? 'moderate' : 'high');
 
-const getGuidance = (riskLevel: RiskLevel, origin: string, destination: string): string => {
-  if (riskLevel === 'low') {
-    return `The ${origin} to ${destination} route generally maintains good on-time performance under these conditions. Consider arriving at the recommended time before departure.`;
-  }
+const clamp = (v: number) => Math.min(95, Math.max(5, v));
 
-  if (riskLevel === 'moderate') {
-    return 'The combination of route characteristics and current conditions suggests some delay potential. We recommend monitoring your flight status closely and allowing extra time for connections.';
-  }
+const getDepartureHour = (time: string) => parseInt(time.split(':')[0] || '0', 10);
 
-  return 'Multiple factors indicate elevated delay risk for this flight. Consider backup plans for tight connections and check with your airline for real-time updates.';
-};
-
-const clampProbability = (value: number) => Math.min(95, Math.max(5, value));
-
-const getDepartureHour = (departureTime: string) => {
-  const hour = parseInt(departureTime.split(':')[0] ?? '0', 10);
-  return Number.isNaN(hour) ? 0 : hour;
-};
-
-const getAirportTrafficWeight = (airport: string) => {
+const getTrafficWeight = (airport: string) => {
   if (HIGH_TRAFFIC_AIRPORTS.has(airport)) return 8;
   if (MEDIUM_TRAFFIC_AIRPORTS.has(airport)) return 4;
-  return airport ? 2 : 0;
-};
-
-const getRouteFactor = (origin: string, destination: string) => {
-  const routeWeight = getAirportTrafficWeight(origin) + getAirportTrafficWeight(destination);
-  if (routeWeight >= 12) return { score: 10, label: 'busy hub traffic' };
-  if (routeWeight >= 7) return { score: 6, label: 'steady airport traffic' };
-  if (routeWeight > 0) return { score: 3, label: 'route handoff complexity' };
-  return { score: 0, label: '' };
+  return 2;
 };
 
 const computeLegScore = (
@@ -122,145 +164,84 @@ const computeLegScore = (
   origin: string,
   destination: string,
   penalty = 0,
-): { probability: number; riskLevel: RiskLevel; factors: string[] } => {
-  let probability = 25;
+) => {
+  let p = 25;
   const factors: string[] = [];
 
-  if (data.precipitation === 'snow') {
-    probability += 35;
-    factors.push('winter weather conditions');
-  } else if (data.precipitation === 'thunderstorms') {
-    probability += 30;
-    factors.push('severe weather');
-  } else if (data.precipitation === 'rain') {
-    probability += 15;
-    factors.push('rain conditions');
-  } else if (data.precipitation === 'sleet') {
-    probability += 18;
-    factors.push('mixed precipitation');
-  }
+  if (data.precipitation === 'snow') { p += 35; factors.push('snow'); }
+  if (data.precipitation === 'thunderstorms') { p += 30; factors.push('storms'); }
+  if (data.precipitation === 'rain') { p += 15; factors.push('rain'); }
 
-  if (data.wind === 'strong') {
-    probability += 20;
-    factors.push('strong winds');
-  } else if (data.wind === 'moderate') {
-    probability += 10;
-    factors.push('moderate winds');
-  }
+  if (data.wind === 'strong') { p += 20; factors.push('strong winds'); }
+  if (data.wind === 'moderate') { p += 10; factors.push('moderate winds'); }
 
   const hour = getDepartureHour(data.departureTime);
-  if (hour >= 6 && hour <= 9) {
-    probability += 12;
-    factors.push('morning rush hour');
-  } else if (hour >= 17 && hour <= 20) {
-    probability += 15;
-    factors.push('evening peak hours');
-  }
+  if (hour >= 6 && hour <= 9) { p += 12; factors.push('morning rush'); }
+  if (hour >= 17 && hour <= 20) { p += 15; factors.push('evening peak'); }
 
   const duration = parseInt(data.duration || '0', 10);
-  if (!Number.isNaN(duration) && duration > 300) {
-    probability += 8;
-    factors.push('long-haul timing');
-  }
+  if (duration > 300) { p += 8; factors.push('long haul'); }
 
-  const routeFactor = getRouteFactor(origin, destination);
-  probability += routeFactor.score;
-  if (routeFactor.label) {
-    factors.push(routeFactor.label);
-  }
+  p += getTrafficWeight(origin) + getTrafficWeight(destination);
 
-  probability = clampProbability(probability + penalty);
-  return {
-    probability,
-    riskLevel: resolveRisk(probability),
-    factors,
-  };
+  p = clamp(p + penalty);
+
+  return { probability: p, riskLevel: resolveRisk(p), factors };
 };
 
-const buildLegExplanation = (riskLevel: RiskLevel, factors: string[]) => {
-  if (factors.length === 0) {
-    return `This leg shows ${riskLevel} delay risk under stable conditions.`;
-  }
-
-  const detail = factors.slice(0, 2).join(' and ');
-  return `This leg shows ${riskLevel} delay risk due to ${detail}.`;
-};
+/* ===========================
+   ITINERARY (FRONTEND TEMP)
+=========================== */
 
 const buildItinerarySummary = (
   request: PredictionRequest,
-  normalizedConnections: string[],
+  connections: string[],
 ): ItineraryPredictionSummary | undefined => {
-  const stops = [
-    request.originAirport,
-    ...normalizedConnections.filter(Boolean),
-    request.destinationAirport,
-  ];
+  const stops = [request.originAirport, ...connections, request.destinationAirport];
 
-  const legs = stops
-    .slice(0, -1)
-    .map((from, index) => ({
-      from,
-      to: stops[index + 1] ?? '',
-      index,
-    }))
-    .filter((leg) => leg.from && leg.to);
+  if (connections.length === 0) return undefined;
 
-  if (normalizedConnections.filter(Boolean).length === 0 || legs.length === 0) {
-    return undefined;
-  }
+  const legs = stops.slice(0, -1).map((from, i) => ({
+    from,
+    to: stops[i + 1],
+  }));
 
-  const legPredictions: LegPrediction[] = legs.map((leg, index) => {
-    const penalty = index < legs.length - 1 ? 6 : 3;
-    const scoredLeg = computeLegScore(request, leg.from, leg.to, penalty);
+  const legPredictions: LegPrediction[] = legs.map((leg, i) => {
+    const penalty = i < legs.length - 1 ? 6 : 3;
+    const scored = computeLegScore(request, leg.from, leg.to, penalty);
+
     return {
       from: leg.from,
       to: leg.to,
-      probability: scoredLeg.probability,
-      riskLevel: scoredLeg.riskLevel,
-      explanation: buildLegExplanation(scoredLeg.riskLevel, scoredLeg.factors),
+      probability: scored.probability,
+      riskLevel: scored.riskLevel,
+      explanation: `This leg shows ${scored.riskLevel} delay risk.`,
     };
   });
 
-  const probabilities = legPredictions.map((leg) => leg.probability);
-  const maxLegScore = Math.max(...probabilities);
-  const averageLegScore = probabilities.reduce((sum, value) => sum + value, 0) / probabilities.length;
-  const connectionCount = normalizedConnections.filter(Boolean).length;
-  const aggregateProbability = clampProbability(
-    Math.round((maxLegScore * 0.5) + (averageLegScore * 0.35) + (connectionCount * 5)),
-  );
-  const aggregateRiskLevel = resolveRisk(aggregateProbability);
-  const highestLeg = legPredictions.reduce((current, leg) =>
-    leg.probability > current.probability ? leg : current,
-  );
-  const routeLabel = stops.join(' -> ');
+  const probs = legPredictions.map(l => l.probability);
+  const aggregate = clamp(Math.round(probs.reduce((a, b) => a + b, 0) / probs.length));
 
   return {
     legs: legPredictions,
-    aggregateProbability,
-    aggregateRiskLevel,
-    aggregateExplanation: `This itinerary is estimated at ${aggregateProbability}% delay risk across ${routeLabel}, with the ${highestLeg.from} to ${highestLeg.to} leg contributing the most pressure.`,
+    aggregateProbability: aggregate,
+    aggregateRiskLevel: resolveRisk(aggregate),
+    aggregateExplanation: `This itinerary has an estimated ${aggregate}% delay risk.`,
   };
 };
 
 const finalizePrediction = (
   prediction: PredictionResponse,
-  itinerarySummary?: ItineraryPredictionSummary,
+  itinerary?: ItineraryPredictionSummary,
 ): PredictionResponse => {
-  if (!itinerarySummary || itinerarySummary.legs.length === 0) {
-    return {
-      ...prediction,
-      itinerarySummary,
-    };
-  }
+  if (!itinerary) return prediction;
 
   return {
     ...prediction,
     baseProbability: prediction.probability,
-    baseRiskLevel: prediction.riskLevel,
-    baseExplanation: prediction.explanation,
-    probability: itinerarySummary.aggregateProbability,
-    riskLevel: itinerarySummary.aggregateRiskLevel,
-    explanation: itinerarySummary.aggregateExplanation,
-    itinerarySummary,
+    probability: itinerary.aggregateProbability,
+    riskLevel: itinerary.aggregateRiskLevel,
+    explanation: itinerary.aggregateExplanation,
+    itinerarySummary: itinerary,
   };
 };
