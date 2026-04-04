@@ -6,7 +6,7 @@ from pydantic import BaseModel, Field
 
 
 RiskLevel = Literal["low", "moderate", "high"]
-PredictionPath = Literal["model_artifact", "heuristic_fallback"]
+PredictionPath = Literal["hybrid_blend", "model_artifact", "heuristic_fallback"]
 PrecipitationType = Literal["none", "rain", "snow", "thunderstorms", "sleet"]
 WindCondition = Literal["calm", "moderate", "strong"]
 
@@ -46,6 +46,27 @@ class PredictionDebugDerivedFeatures(BaseModel):
     peak_departure_score: float
 
 
+class PredictionDebugScoreBreakdown(BaseModel):
+    baseScore: int
+    routeContribution: int
+    peakContribution: int
+    totalDelayContribution: int
+    precipitationBonus: int
+    windBonus: int
+    unclampedTotal: int
+    clampedTotal: int
+
+
+class PredictionDebugBlendInfo(BaseModel):
+    heuristicProbability: int
+    modelProbability: int | None = None
+    modelDelta: int | None = None
+    scaledAdjustment: int | None = None
+    adjustmentCap: int | None = None
+    appliedAdjustment: int | None = None
+    reasoning: str
+
+
 class PredictionDebugInfo(BaseModel):
     pathUsed: PredictionPath
     modelLoaded: bool
@@ -53,6 +74,8 @@ class PredictionDebugInfo(BaseModel):
     datasetVersion: str | None
     rawInput: PredictionDebugRawInput
     derivedFeatures: PredictionDebugDerivedFeatures
+    heuristicBreakdown: PredictionDebugScoreBreakdown | None = None
+    blendInfo: PredictionDebugBlendInfo | None = None
     finalProbability: int
     fallbackReason: str | None = None
     notes: list[str]

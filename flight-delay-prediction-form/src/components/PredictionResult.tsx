@@ -211,6 +211,13 @@ export function PredictionResult({ prediction, isLoading, hasSubmitted }: Predic
                             ['Raw backend/direct-route score', prediction.baseProbability === undefined ? 'Unavailable' : `${prediction.baseProbability}%`],
                           ] as [string, string][]
                         : []),
+                      ...(prediction.debug.blendInfo
+                        ? [
+                            ['Heuristic score', `${prediction.debug.blendInfo.heuristicProbability}%`],
+                            ['Model score', prediction.debug.blendInfo.modelProbability === null ? 'Unavailable' : `${prediction.debug.blendInfo.modelProbability}%`],
+                            ['Applied adjustment', prediction.debug.blendInfo.appliedAdjustment === null ? 'Unavailable' : `${prediction.debug.blendInfo.appliedAdjustment > 0 ? '+' : ''}${prediction.debug.blendInfo.appliedAdjustment} pts`],
+                          ] as [string, string][]
+                        : []),
                       ['Final probability', `${prediction.debug.finalProbability}%`],
                     ]}
                   />
@@ -218,6 +225,14 @@ export function PredictionResult({ prediction, isLoading, hasSubmitted }: Predic
                     <p className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-amber-800">
                       {prediction.debug.fallbackReason}
                     </p>
+                  )}
+                  {prediction.debug.blendInfo && (
+                    <div className="rounded-md border border-slate-200 bg-white px-3 py-3">
+                      <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                        Hybrid Blend Reasoning
+                      </p>
+                      <p className="mt-2 text-sm text-slate-700">{prediction.debug.blendInfo.reasoning}</p>
+                    </div>
                   )}
                   {hasConnectedItinerary && prediction.baseExplanation && (
                     <div className="rounded-md border border-slate-200 bg-white px-3 py-3">
@@ -229,6 +244,8 @@ export function PredictionResult({ prediction, isLoading, hasSubmitted }: Predic
                   )}
                   <DebugBlock title="Normalized Raw Input" value={prediction.debug.rawInput} />
                   <DebugBlock title="Derived Features" value={prediction.debug.derivedFeatures} />
+                  <DebugBlock title="Heuristic Breakdown" value={prediction.debug.heuristicBreakdown} />
+                  <DebugBlock title="Blend Details" value={prediction.debug.blendInfo} />
                   {prediction.debug.notes.length > 0 && (
                     <div>
                       <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">Notes</p>

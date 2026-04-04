@@ -2,7 +2,7 @@ export type PrecipitationType = 'none' | 'rain' | 'snow' | 'thunderstorms' | 'sl
 export type WindCondition = 'calm' | 'moderate' | 'strong';
 export type RiskLevel = 'low' | 'moderate' | 'high';
 export type PredictionSource = 'backend' | 'mock_fallback';
-export type PredictionPath = 'model_artifact' | 'heuristic_fallback';
+export type PredictionPath = 'hybrid_blend' | 'model_artifact' | 'heuristic_fallback';
 
 export interface Airport {
   code: string;
@@ -83,6 +83,16 @@ export interface PredictionDebugScoreBreakdown {
   clampedTotal: number;
 }
 
+export interface PredictionDebugBlendInfo {
+  heuristicProbability: number;
+  modelProbability: number | null;
+  modelDelta: number | null;
+  scaledAdjustment: number | null;
+  adjustmentCap: number | null;
+  appliedAdjustment: number | null;
+  reasoning: string;
+}
+
 export interface PredictionDebugInfo {
   pathUsed: PredictionPath;
   modelLoaded: boolean;
@@ -90,6 +100,8 @@ export interface PredictionDebugInfo {
   datasetVersion: string | null;
   rawInput: PredictionDebugRawInput;
   derivedFeatures: PredictionDebugDerivedFeatures;
+  heuristicBreakdown?: PredictionDebugScoreBreakdown | null;
+  blendInfo?: PredictionDebugBlendInfo | null;
   finalProbability: number;
   fallbackReason?: string | null;
   notes: string[];

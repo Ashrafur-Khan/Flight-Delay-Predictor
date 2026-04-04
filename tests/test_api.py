@@ -10,7 +10,7 @@ class ApiTests(unittest.TestCase):
     def test_health_endpoint_reports_metadata(self) -> None:
         response = home()
         self.assertEqual(response.status, "ok")
-        self.assertIn(response.predictionMode, {"model_artifact", "heuristic_fallback"})
+        self.assertIn(response.predictionMode, {"hybrid_blend", "model_artifact", "heuristic_fallback"})
 
     def test_predict_returns_debug_only_when_requested(self) -> None:
         payload = PredictionRequest(
@@ -25,7 +25,7 @@ class ApiTests(unittest.TestCase):
 
         debug_response = predict(PredictionRequest(**{**payload.model_dump(), "includeDebug": True}))
         self.assertIsNotNone(debug_response.debug)
-        self.assertIn(debug_response.debug.pathUsed, {"model_artifact", "heuristic_fallback"})
+        self.assertIn(debug_response.debug.pathUsed, {"hybrid_blend", "model_artifact", "heuristic_fallback"})
 
     def test_invalid_request_returns_validation_error(self) -> None:
         with self.assertRaises(Exception):
