@@ -25,15 +25,20 @@ export interface FlightFormData {
 export type RouteValidationIssueCode =
   | 'same_origin_destination'
   | 'duplicate_consecutive_stop'
-  | 'all_same_airport'
-  | 'loop_detected'
-  | 'returns_to_origin';
+  | 'invalid_temperature'
+  | 'temperature_out_of_range';
+
+export type RouteValidationField =
+  | 'originAirport'
+  | 'destinationAirport'
+  | 'connections'
+  | 'temperature';
 
 export interface RouteValidationIssue {
   code: RouteValidationIssueCode;
   message: string;
   stopIndex?: number;
-  field?: 'originAirport' | 'destinationAirport' | 'connections';
+  field?: RouteValidationField;
 }
 
 export interface PredictionRequest {
