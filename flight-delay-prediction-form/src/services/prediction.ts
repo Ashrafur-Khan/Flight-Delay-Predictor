@@ -2,22 +2,19 @@ import { createApiClient } from '@/lib/api';
 import { normalizeAirportCode } from '@/lib/airports';
 import type {
   FlightFormData,
-  ItineraryPredictionSummary,
-  LegPrediction,
   PredictionRequest,
   PredictionResponse,
   RouteValidationIssue,
-  RiskLevel,
 } from '@/types';
 
 const apiClient = createApiClient();
 const shouldIncludeDebug = import.meta.env.DEV;
 
-const HIGH_TRAFFIC_AIRPORTS = new Set(['ATL', 'LAX', 'ORD', 'DFW', 'DEN', 'JFK', 'SFO', 'SEA', 'MCO', 'LAS']);
-const MEDIUM_TRAFFIC_AIRPORTS = new Set(['BOS', 'CLT', 'EWR', 'IAH', 'MIA', 'PHX', 'MSP', 'DTW', 'PHL', 'BWI']);
-
 const MIN_TEMPERATURE = -50;
 const MAX_TEMPERATURE = 130;
+
+const MIN_DURATION = 0;
+const MAX_DURATION = 1440; // 24 hours max
 
 /* =========================
    Helpers
@@ -25,10 +22,15 @@ const MAX_TEMPERATURE = 130;
 
 function sanitizeTemperature(temp: string): string {
   const value = parseInt(temp || '', 10);
-
   if (Number.isNaN(value)) return '';
-
   const clamped = Math.min(MAX_TEMPERATURE, Math.max(MIN_TEMPERATURE, value));
+  return String(clamped);
+}
+
+function sanitizeDuration(duration: string): string {
+  const value = parseInt(duration || '', 10);
+  if (Number.isNaN(value)) return '';
+  const clamped = Math.min(MAX_DURATION, Math.max(MIN_DURATION, value));
   return String(clamped);
 }
 
@@ -43,7 +45,7 @@ export function preparePredictionRequest(data: FlightFormData) {
       departureTime: data.departureTime,
       originAirport: normalizeAirportCode(data.originAirport),
       destinationAirport: normalizeAirportCode(data.destinationAirport),
-      duration: data.duration,
+      duration: sanitizeDuration(data.duration), // ✅ FIXED
       temperature: sanitizeTemperature(data.temperature),
       precipitation: data.precipitation,
       wind: data.wind,
@@ -61,6 +63,7 @@ export function validateRoute(data: FlightFormData): RouteValidationIssue[] {
   const { request, normalizedConnections } = preparePredictionRequest(data);
   const issues: RouteValidationIssue[] = [];
 
+  /* ===== Temperature ===== */
   const temp = parseInt(data.temperature || '', 10);
 
   if (data.temperature !== '' && Number.isNaN(temp)) {
@@ -77,6 +80,24 @@ export function validateRoute(data: FlightFormData): RouteValidationIssue[] {
     });
   }
 
+  /* ===== Duration (NEW) ===== */
+  const duration = parseInt(data.duration || '', 10);
+
+  if (data.duration !== '' && Number.isNaN(duration)) {
+    issues.push({
+      code: 'invalid_duration',
+      field: 'duration',
+      message: 'Flight duration must be a valid number.',
+    });
+  } else if (!Number.isNaN(duration) && (duration < MIN_DURATION || duration > MAX_DURATION)) {
+    issues.push({
+      code: 'duration_out_of_range',
+      field: 'duration',
+      message: `Flight duration must be between ${MIN_DURATION} and ${MAX_DURATION} minutes.`,
+    });
+  }
+
+  /* ===== Route Logic ===== */
   const normalizedOrigin = request.originAirport;
   const normalizedDestination = request.destinationAirport;
 
@@ -98,7 +119,7 @@ export function validateRoute(data: FlightFormData): RouteValidationIssue[] {
 }
 
 /* =========================
-   PUBLIC ENTRYPOINT (RESTORED)
+   PUBLIC ENTRYPOINT
 ========================= */
 
 export async function submitPrediction(
@@ -106,9 +127,7 @@ export async function submitPrediction(
 ): Promise<PredictionResponse> {
   const { request } = preparePredictionRequest(data);
 
-  // If API not configured → fallback
   if (!apiClient.baseUrl) {
-    console.info('API base URL not configured. Using mock prediction.');
     return generateMockPrediction(request);
   }
 
@@ -117,16 +136,14 @@ export async function submitPrediction(
       '/predict',
       request
     );
-
     return response;
   } catch (error) {
-    console.warn('Prediction API failed, using mock fallback.', error);
     return generateMockPrediction(request);
   }
 }
 
 /* =========================
-   Mock Prediction
+   Mock
 ========================= */
 
 export function generateMockPrediction(
