@@ -86,10 +86,12 @@ export interface PredictionDebugDerivedFeatures {
 export interface PredictionDebugScoreBreakdown {
   baseScore: number;
   routeContribution: number;
-  peakContribution: number;
+  hubBonus: number;
+  timeOfDayContribution: number;
   totalDelayContribution: number;
   precipitationBonus: number;
   windBonus: number;
+  weatherInteractionBonus: number;
   unclampedTotal: number;
   clampedTotal: number;
 }
@@ -97,10 +99,10 @@ export interface PredictionDebugScoreBreakdown {
 export interface PredictionDebugBlendInfo {
   heuristicProbability: number;
   modelProbability: number | null;
-  modelDelta: number | null;
-  scaledAdjustment: number | null;
-  adjustmentCap: number | null;
+  rawModelDisagreement: number | null;
+  maxModelShift: number | null;
   appliedAdjustment: number | null;
+  blendMethod: string;
   reasoning: string;
 }
 

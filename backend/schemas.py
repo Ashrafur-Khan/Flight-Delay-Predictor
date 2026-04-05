@@ -49,10 +49,12 @@ class PredictionDebugDerivedFeatures(BaseModel):
 class PredictionDebugScoreBreakdown(BaseModel):
     baseScore: int
     routeContribution: int
-    peakContribution: int
+    hubBonus: int
+    timeOfDayContribution: int
     totalDelayContribution: int
     precipitationBonus: int
     windBonus: int
+    weatherInteractionBonus: int
     unclampedTotal: int
     clampedTotal: int
 
@@ -60,10 +62,10 @@ class PredictionDebugScoreBreakdown(BaseModel):
 class PredictionDebugBlendInfo(BaseModel):
     heuristicProbability: int
     modelProbability: int | None = None
-    modelDelta: int | None = None
-    scaledAdjustment: int | None = None
-    adjustmentCap: int | None = None
+    rawModelDisagreement: int | None = None
+    maxModelShift: int | None = None
     appliedAdjustment: int | None = None
+    blendMethod: str
     reasoning: str
 
 

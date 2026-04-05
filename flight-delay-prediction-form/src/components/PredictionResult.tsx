@@ -215,6 +215,9 @@ export function PredictionResult({ prediction, isLoading, hasSubmitted }: Predic
                         ? [
                             ['Heuristic score', `${prediction.debug.blendInfo.heuristicProbability}%`],
                             ['Model score', prediction.debug.blendInfo.modelProbability === null ? 'Unavailable' : `${prediction.debug.blendInfo.modelProbability}%`],
+                            ['Blend method', prediction.debug.blendInfo.blendMethod],
+                            ['Raw model disagreement', prediction.debug.blendInfo.rawModelDisagreement === null ? 'Unavailable' : `${prediction.debug.blendInfo.rawModelDisagreement > 0 ? '+' : ''}${prediction.debug.blendInfo.rawModelDisagreement} pts`],
+                            ['Max model shift', prediction.debug.blendInfo.maxModelShift === null ? 'Unavailable' : `${prediction.debug.blendInfo.maxModelShift} pts`],
                             ['Applied adjustment', prediction.debug.blendInfo.appliedAdjustment === null ? 'Unavailable' : `${prediction.debug.blendInfo.appliedAdjustment > 0 ? '+' : ''}${prediction.debug.blendInfo.appliedAdjustment} pts`],
                           ] as [string, string][]
                         : []),
