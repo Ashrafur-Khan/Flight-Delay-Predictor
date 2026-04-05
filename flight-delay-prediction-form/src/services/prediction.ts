@@ -63,6 +63,26 @@ export function validateRoute(data: FlightFormData): RouteValidationIssue[] {
   const { request, normalizedConnections } = preparePredictionRequest(data);
   const issues: RouteValidationIssue[] = [];
 
+  /* ===== Duplicate / Invalid Route Checks ===== */
+
+  const fullRoute = [
+    request.originAirport,
+    ...normalizedConnections,
+    request.destinationAirport,
+  ].filter(Boolean);
+
+  /* ❌ Consecutive duplicates (ORD → ORD) */
+  for (let i = 0; i < fullRoute.length - 1; i++) {
+    if (fullRoute[i] === fullRoute[i + 1]) {
+      issues.push({
+        code: 'duplicate_consecutive_stop',
+        field: 'connections',
+        stopIndex: i + 1,
+        message: `Cannot have consecutive duplicate airports (${fullRoute[i]} → ${fullRoute[i + 1]}).`,
+      });
+    }
+  }
+  
   /* ===== Temperature ===== */
   const temp = parseInt(data.temperature || '', 10);
 
