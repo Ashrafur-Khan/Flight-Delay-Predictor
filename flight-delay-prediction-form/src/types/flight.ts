@@ -26,10 +26,11 @@ export interface FlightFormData {
 export type RouteValidationIssueCode =
   | 'same_origin_destination'
   | 'duplicate_consecutive_stop'
+  | 'duplicate_airport_in_route'   // ✅ NEW
   | 'invalid_temperature'
   | 'temperature_out_of_range'
-  | 'invalid_duration'           // ✅ NEW
-  | 'duration_out_of_range';     // ✅ NEW
+  | 'invalid_duration'
+  | 'duration_out_of_range';
 
 export type RouteValidationField =
   | 'originAirport'
