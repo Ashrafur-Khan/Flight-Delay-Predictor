@@ -81,6 +81,76 @@ export const AIRPORTS: Airport[] = [
   { code: 'TYS', name: 'McGhee Tyson', city: 'Knoxville' },
   { code: 'LGB', name: 'Long Beach Airport', city: 'Long Beach' },
   { code: 'KOA', name: 'Ellison Onizuka Kona International', city: 'Kona' },
+  { code: 'DSM', name: 'Des Moines International', city: 'Des Moines' },
+  { code: 'ROC', name: 'Greater Rochester International', city: 'Rochester' },
+  { code: 'ALB', name: 'Albany International', city: 'Albany' },
+  { code: 'GSP', name: 'Greenville-Spartanburg International', city: 'Greer' },
+  { code: 'LIH', name: 'Lihue Airport', city: 'Lihue' },
+  { code: 'SYR', name: 'Syracuse Hancock International', city: 'Syracuse' },
+  { code: 'MYR', name: 'Myrtle Beach International', city: 'Myrtle Beach' },
+  { code: 'PSP', name: 'Palm Springs International', city: 'Palm Springs' },
+  { code: 'LIT', name: 'Bill and Hillary Clinton National', city: 'Little Rock' },
+  { code: 'GSO', name: 'Piedmont Triad International', city: 'Greensboro' },
+  { code: 'MSN', name: 'Dane County Regional', city: 'Madison' },
+  { code: 'XNA', name: 'Northwest Arkansas Regional', city: 'Fayetteville' },
+  { code: 'PNS', name: 'Pensacola International', city: 'Pensacola' },
+  { code: 'PWM', name: 'Portland International Jetport', city: 'Portland' },
+  { code: 'SRQ', name: 'Sarasota-Bradenton International', city: 'Sarasota' },
+  { code: 'COS', name: 'Colorado Springs Municipal', city: 'Colorado Springs' },
+  { code: 'FAT', name: 'Fresno Yosemite International', city: 'Fresno' },
+  { code: 'DAY', name: 'James M. Cox Dayton International', city: 'Dayton' },
+  { code: 'ICT', name: 'Wichita Dwight D. Eisenhower National', city: 'Wichita' },
+  { code: 'HPN', name: 'Westchester County', city: 'White Plains' },
+  { code: 'AVL', name: 'Asheville Regional', city: 'Asheville' },
+  { code: 'LEX', name: 'Blue Grass', city: 'Lexington' },
+  { code: 'HSV', name: 'Huntsville International', city: 'Huntsville' },
+  { code: 'BZN', name: 'Bozeman Yellowstone International', city: 'Bozeman' },
+  { code: 'MAF', name: 'Midland International Air and Space Port', city: 'Midland/Odessa' },
+  { code: 'CAE', name: 'Columbia Metropolitan', city: 'Columbia' },
+  { code: 'VPS', name: 'Destin-Fort Walton Beach', city: 'Valparaiso' },
+  { code: 'SGF', name: 'Springfield-Branson National', city: 'Springfield' },
+  { code: 'CID', name: 'The Eastern Iowa', city: 'Cedar Rapids/Iowa City' },
+  { code: 'MDT', name: 'Harrisburg International', city: 'Harrisburg' },
+  { code: 'BTV', name: 'Burlington International', city: 'Burlington' },
+  { code: 'MHT', name: 'Manchester-Boston Regional', city: 'Manchester' },
+  { code: 'SFB', name: 'Orlando Sanford International', city: 'Sanford' },
+  { code: 'JAN', name: 'Jackson Medgar Wiley Evers International', city: 'Jackson' },
+  { code: 'EUG', name: 'Mahlon Sweet Field', city: 'Eugene' },
+  { code: 'CHA', name: 'Lovell Field', city: 'Chattanooga' },
+  { code: 'ECP', name: 'Northwest Florida Beaches International', city: 'Panama City' },
+  { code: 'FSD', name: 'Joe Foss Field', city: 'Sioux Falls' },
+  { code: 'ILM', name: 'Wilmington International', city: 'Wilmington' },
+  { code: 'RDM', name: 'Roberts Field', city: 'Bend/Redmond' },
+  { code: 'SBA', name: 'Santa Barbara Municipal', city: 'Santa Barbara' },
+  { code: 'MFR', name: 'Rogue Valley International', city: 'Medford' },
+  { code: 'BTR', name: 'Baton Rouge Metropolitan', city: 'Baton Rouge' },
+  { code: 'SBN', name: 'South Bend International', city: 'South Bend' },
+  { code: 'FWA', name: 'Fort Wayne International', city: 'Fort Wayne' },
+  { code: 'PIE', name: 'St. Pete-Clearwater International', city: 'St. Petersburg' },
+  { code: 'ASE', name: 'Aspen Pitkin County Sardy Field', city: 'Aspen' },
+  { code: 'LBB', name: 'Lubbock Preston Smith International', city: 'Lubbock' },
+  { code: 'ITO', name: 'Hilo International', city: 'Hilo' },
+  { code: 'FAR', name: 'Hector International', city: 'Fargo' },
+  { code: 'EYW', name: 'Key West International', city: 'Key West' },
+  { code: 'ATW', name: 'Appleton International', city: 'Appleton' },
+  { code: 'SHV', name: 'Shreveport Regional', city: 'Shreveport' },
+  { code: 'CHO', name: 'Charlottesville Albemarle', city: 'Charlottesville' },
+  { code: 'PSC', name: 'Tri-Cities', city: 'Pasco/Kennewick/Richland' },
+  { code: 'ROA', name: 'Roanoke Blacksburg Regional', city: 'Roanoke' },
+  { code: 'MOB', name: 'Mobile Regional', city: 'Mobile' },
+  { code: 'ISP', name: 'Long Island MacArthur', city: 'Islip' },
+  { code: 'TLH', name: 'Tallahassee International', city: 'Tallahassee' },
+  { code: 'GRB', name: 'Green Bay Austin Straubel International', city: 'Green Bay' },
+  { code: 'CAK', name: 'Akron-Canton Regional', city: 'Akron' },
+  { code: 'AMA', name: 'Rick Husband Amarillo International', city: 'Amarillo' },
+  { code: 'JAC', name: 'Jackson Hole', city: 'Jackson' },
+  { code: 'RAP', name: 'Rapid City Regional', city: 'Rapid City' },
+  { code: 'CRP', name: 'Corpus Christi International', city: 'Corpus Christi' },
+  { code: 'PGD', name: 'Punta Gorda Airport', city: 'Punta Gorda' },
+  { code: 'MSO', name: 'Missoula International', city: 'Missoula' },
+  { code: 'BIL', name: 'Billings Logan International', city: 'Billings' },
+  { code: 'TVC', name: 'Cherry Capital', city: 'Traverse City' },
+  { code: 'MLI', name: 'Quad City International', city: 'Moline' },
 ];
 
 export const getAirportDisplayLabel = (airport: Airport) => `${airport.code} - ${airport.city}`;
@@ -95,11 +165,6 @@ export const normalizeAirportCode = (value: string): string => {
     return '';
   }
 
-  const codePrefixMatch = trimmed.match(/^([A-Za-z]{3})(?:\b|\s*-|$)/);
-  if (codePrefixMatch?.[1]) {
-    return codePrefixMatch[1].toUpperCase();
-  }
-
   const lowerValue = trimmed.toLowerCase();
   const knownAirport = AIRPORTS.find(airport => {
     const displayLabel = getAirportDisplayLabel(airport).toLowerCase();
@@ -111,5 +176,14 @@ export const normalizeAirportCode = (value: string): string => {
     );
   });
 
-  return knownAirport?.code ?? trimmed.toUpperCase();
+  if (knownAirport) {
+    return knownAirport.code;
+  }
+
+  const codePrefixMatch = trimmed.match(/^([A-Za-z]{3})(?:\b|\s*-|$)/);
+  if (codePrefixMatch?.[1]) {
+    return codePrefixMatch[1].toUpperCase();
+  }
+
+  return trimmed.toUpperCase();
 };

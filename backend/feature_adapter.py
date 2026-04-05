@@ -43,27 +43,27 @@ ADAPTER_VERSION = "adapter_v1"
 
 
 def compute_route_congestion(origin: str, destination: str) -> float:
-    score = 0.25
+    score = 0.15
     for airport in (origin, destination):
         bucket = airport_traffic_bucket(airport)
         if bucket == "high":
-            score += 0.25
+            score += 0.18
         elif bucket == "medium":
-            score += 0.15
+            score += 0.10
         elif airport:
-            score += 0.05
+            score += 0.03
 
-    return min(score, 0.9)
+    return min(score, 0.7)
 
 
 def compute_peak_departure_score(hour: int) -> float:
     if 6 <= hour <= 9:
-        return 0.35
+        return 0.22
     if 16 <= hour <= 20:
-        return 0.4
+        return 0.28
     if 21 <= hour <= 23:
-        return 0.18
-    return 0.08
+        return 0.10
+    return 0.02
 
 
 def adapt_request_to_model_features(payload: NormalizedPredictionInput) -> AdaptedFeatures:
@@ -88,22 +88,17 @@ def adapt_request_to_model_features(payload: NormalizedPredictionInput) -> Adapt
     elif payload.temperature_f >= 95:
         weather_delay_norm += 0.04
 
-    nas_delay_norm = 0.05 + route_congestion_score * 0.22 + peak_departure_score * 0.12
-    security_delay_norm = 0.005 + route_congestion_score * 0.015
-    late_aircraft_delay_norm = 0.04 + peak_departure_score * 0.15
+    nas_delay_norm = 0.04 + route_congestion_score * 0.12 + peak_departure_score * 0.08
+    security_delay_norm = 0.003 + route_congestion_score * 0.008
+    late_aircraft_delay_norm = 0.03 + peak_departure_score * 0.10
 
     if payload.wind == "moderate":
         weather_delay_norm += 0.04
-        nas_delay_norm += 0.02
+        nas_delay_norm += 0.015
     elif payload.wind == "strong":
         weather_delay_norm += 0.09
-        nas_delay_norm += 0.05
-        late_aircraft_delay_norm += 0.04
-
-    if payload.duration_minutes >= 300:
-        late_aircraft_delay_norm += 0.04
-    elif payload.duration_minutes >= 180:
-        late_aircraft_delay_norm += 0.02
+        nas_delay_norm += 0.035
+        late_aircraft_delay_norm += 0.03
 
     arr_flights = int(round(70 + route_congestion_score * 70 + peak_departure_score * 45))
     total_delay_norm = (

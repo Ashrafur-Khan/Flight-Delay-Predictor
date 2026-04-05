@@ -138,7 +138,6 @@ class PredictionService:
                     departureTime=bundle.normalized_payload.departure_time,
                     originAirport=bundle.normalized_payload.origin_airport,
                     destinationAirport=bundle.normalized_payload.destination_airport,
-                    durationMinutes=bundle.normalized_payload.duration_minutes,
                     temperatureF=bundle.normalized_payload.temperature_f,
                     precipitation=bundle.normalized_payload.precipitation,
                     wind=bundle.normalized_payload.wind,
@@ -149,20 +148,20 @@ class PredictionService:
                     PredictionDebugBlendInfo(
                         heuristicProbability=bundle.hybrid_blend.heuristic_probability,
                         modelProbability=bundle.hybrid_blend.model_probability,
-                        modelDelta=bundle.hybrid_blend.model_delta,
-                        scaledAdjustment=bundle.hybrid_blend.scaled_adjustment,
-                        adjustmentCap=bundle.hybrid_blend.adjustment_cap,
+                        rawModelDisagreement=bundle.hybrid_blend.raw_model_disagreement,
+                        maxModelShift=bundle.hybrid_blend.max_model_shift,
                         appliedAdjustment=bundle.hybrid_blend.applied_adjustment,
+                        blendMethod=bundle.hybrid_blend.blend_method,
                         reasoning=bundle.hybrid_blend.reasoning,
                     )
                     if bundle.hybrid_blend is not None
                     else PredictionDebugBlendInfo(
                         heuristicProbability=bundle.heuristic_estimate.probability,
                         modelProbability=None,
-                        modelDelta=None,
-                        scaledAdjustment=None,
-                        adjustmentCap=None,
+                        rawModelDisagreement=None,
+                        maxModelShift=None,
                         appliedAdjustment=None,
+                        blendMethod="heuristic_only_fallback",
                         reasoning="Final score matches the heuristic fallback because no trained model artifact is available.",
                     )
                 ),

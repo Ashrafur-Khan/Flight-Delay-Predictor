@@ -16,6 +16,7 @@ class PredictionRequest(BaseModel):
     departureTime: str = Field(..., examples=["08:30"])
     originAirport: str = Field(..., min_length=3, examples=["JFK"])
     destinationAirport: str = Field(..., min_length=3, examples=["LAX"])
+    # Temporary compatibility shim for older clients; ignored by the backend and scheduled for removal.
     duration: str = Field(default="")
     temperature: str = Field(default="")
     precipitation: PrecipitationType = "none"
@@ -28,7 +29,6 @@ class PredictionDebugRawInput(BaseModel):
     departureTime: str
     originAirport: str
     destinationAirport: str
-    durationMinutes: int
     temperatureF: int
     precipitation: PrecipitationType
     wind: WindCondition
@@ -49,10 +49,12 @@ class PredictionDebugDerivedFeatures(BaseModel):
 class PredictionDebugScoreBreakdown(BaseModel):
     baseScore: int
     routeContribution: int
-    peakContribution: int
+    hubBonus: int
+    timeOfDayContribution: int
     totalDelayContribution: int
     precipitationBonus: int
     windBonus: int
+    weatherInteractionBonus: int
     unclampedTotal: int
     clampedTotal: int
 
@@ -60,10 +62,10 @@ class PredictionDebugScoreBreakdown(BaseModel):
 class PredictionDebugBlendInfo(BaseModel):
     heuristicProbability: int
     modelProbability: int | None = None
-    modelDelta: int | None = None
-    scaledAdjustment: int | None = None
-    adjustmentCap: int | None = None
+    rawModelDisagreement: int | None = None
+    maxModelShift: int | None = None
     appliedAdjustment: int | None = None
+    blendMethod: str
     reasoning: str
 
 

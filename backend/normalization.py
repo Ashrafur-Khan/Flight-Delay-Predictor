@@ -18,7 +18,6 @@ class NormalizedPredictionInput:
     departure_time: str
     origin_airport: str
     destination_airport: str
-    duration_minutes: int
     temperature_f: int
     precipitation: PrecipitationType
     wind: WindCondition
@@ -70,7 +69,6 @@ def normalize_request(payload: PredictionRequest) -> tuple[NormalizedPredictionI
 
     origin_airport = normalize_airport_code(payload.originAirport)
     destination_airport = normalize_airport_code(payload.destinationAirport)
-    duration_minutes = max(parse_int(payload.duration), 0)
     temperature_f = parse_int(payload.temperature, default=65)
 
     if payload.originAirport.strip() and origin_airport != payload.originAirport.strip():
@@ -89,12 +87,6 @@ def normalize_request(payload: PredictionRequest) -> tuple[NormalizedPredictionI
     else:
         notes.append("Temperature not provided; defaulted to 65F.")
 
-    if payload.duration.strip():
-        if duration_minutes < 180:
-            notes.append("Duration did not cross a long-haul scoring threshold.")
-    else:
-        notes.append("Duration not provided; defaulted to 0 minutes.")
-
     if payload.precipitation == "none":
         notes.append("No precipitation penalty applied.")
     if payload.wind == "calm":
@@ -106,7 +98,6 @@ def normalize_request(payload: PredictionRequest) -> tuple[NormalizedPredictionI
             departure_time=payload.departureTime,
             origin_airport=origin_airport,
             destination_airport=destination_airport,
-            duration_minutes=duration_minutes,
             temperature_f=temperature_f,
             precipitation=payload.precipitation,
             wind=payload.wind,

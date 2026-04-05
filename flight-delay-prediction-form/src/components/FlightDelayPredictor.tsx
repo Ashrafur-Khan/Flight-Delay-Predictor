@@ -3,7 +3,7 @@ import { AirportInput } from './AirportInput';
 import { PredictionResult } from './PredictionResult';
 import { AlertTriangle, ChevronDown, ChevronUp, Plane, Plus, X } from 'lucide-react';
 import type { FlightFormData, PredictionResponse } from '@/types';
-import { submitPrediction, validateRoute } from '@/services/prediction';
+import { submitPrediction, validateFlightForm } from '@/services/prediction';
 
 const formatStopLabel = (value: string, fallback: string) => value.trim() || fallback;
 
@@ -14,7 +14,6 @@ export function FlightDelayPredictor() {
     originAirport: '',
     destinationAirport: '',
     connections: [],
-    duration: '',
     temperature: '',
     precipitation: 'none',
     wind: 'calm',
@@ -24,14 +23,16 @@ export function FlightDelayPredictor() {
   const [prediction, setPrediction] = useState<PredictionResponse | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const routeValidationIssues = validateRoute(formData);
+  const validation = validateFlightForm(formData);
+  const blockingIssues = validation.blockingIssues;
+  const warnings = validation.warnings;
 
   useEffect(() => {
-    if (routeValidationIssues.length > 0) {
+    if (blockingIssues.length > 0) {
       setPrediction(null);
       setError(null);
     }
-  }, [formData.originAirport, formData.destinationAirport, formData.connections, routeValidationIssues.length]);
+  }, [formData.originAirport, formData.destinationAirport, formData.connections, formData.temperature, formData.precipitation, blockingIssues.length]);
 
   const handleInputChange = <Field extends keyof FlightFormData>(
     field: Field,
@@ -64,8 +65,8 @@ export function FlightDelayPredictor() {
   };
 
   const handlePredict = async () => {
-    if (routeValidationIssues.length > 0) {
-      setError(routeValidationIssues[0]?.message ?? 'Please enter a valid flight.');
+    if (blockingIssues.length > 0) {
+      setError(blockingIssues[0]?.message ?? 'Please enter a valid flight.');
       setPrediction(null);
       return;
     }
@@ -91,7 +92,7 @@ export function FlightDelayPredictor() {
                        formData.departureTime && 
                        formData.originAirport && 
                        formData.destinationAirport;
-  const canPredict = Boolean(isFormValid) && routeValidationIssues.length === 0;
+  const canPredict = Boolean(isFormValid) && blockingIssues.length === 0;
   const routeStops = [
     { label: 'Origin', value: formData.originAirport, fallback: 'Select origin' },
     ...formData.connections.map((connection, index) => ({
@@ -232,7 +233,7 @@ export function FlightDelayPredictor() {
                 </p>
               )}
 
-              {routeValidationIssues.length > 0 && (
+              {blockingIssues.length > 0 && (
                 <div
                   className="mt-4 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-amber-900"
                   role="alert"
@@ -242,7 +243,7 @@ export function FlightDelayPredictor() {
                     <div>
                       <p className="text-sm font-semibold">Enter a valid flight</p>
                       <ul className="mt-2 space-y-1 text-sm">
-                        {routeValidationIssues.map((issue) => (
+                        {blockingIssues.map((issue) => (
                           <li key={`${issue.code}-${issue.stopIndex ?? 'none'}`}>
                             {issue.message}
                           </li>
@@ -269,25 +270,6 @@ export function FlightDelayPredictor() {
               <div className="mt-4 space-y-4">
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Flight Duration
-                  </label>
-                  <div className="relative">
-                    <input
-                      type="number"
-                      value={formData.duration}
-                      onChange={(e) => handleInputChange('duration', e.target.value)}
-                      placeholder="180"
-                      min="0"
-                      className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                    />
-                    <span className="absolute right-4 top-1/2 -translate-y-1/2 text-gray-500 text-sm">
-                      minutes
-                    </span>
-                  </div>
-                </div>
-
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
                     Temperature
                   </label>
                   <div className="relative">
@@ -295,6 +277,9 @@ export function FlightDelayPredictor() {
                       type="number"
                       value={formData.temperature}
                       onChange={(e) => handleInputChange('temperature', e.target.value)}
+                      min={-80}
+                      max={140}
+                      step={1}
                       placeholder="72"
                       className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                     />
@@ -345,6 +330,27 @@ export function FlightDelayPredictor() {
                     <option value="strong">Strong</option>
                   </select>
                 </div>
+
+                {warnings.length > 0 && (
+                  <div
+                    className="rounded-lg border border-blue-200 bg-blue-50 px-4 py-3 text-blue-900"
+                    role="status"
+                  >
+                    <div className="flex items-start gap-3">
+                      <AlertTriangle className="mt-0.5 h-5 w-5 shrink-0" />
+                      <div>
+                        <p className="text-sm font-semibold">Check these weather details</p>
+                        <ul className="mt-2 space-y-1 text-sm">
+                          {warnings.map((issue) => (
+                            <li key={`${issue.code}-${issue.field ?? 'none'}`}>
+                              {issue.message}
+                            </li>
+                          ))}
+                        </ul>
+                      </div>
+                    </div>
+                  </div>
+                )}
               </div>
             )}
           </div>

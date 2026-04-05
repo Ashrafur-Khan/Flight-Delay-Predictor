@@ -16,21 +16,32 @@ export interface FlightFormData {
   originAirport: string;
   destinationAirport: string;
   connections: string[];
-  duration: string;
   temperature: string;
   precipitation: PrecipitationType;
   wind: WindCondition;
 }
 
-export type RouteValidationIssueCode =
+export type FlightValidationIssueCode =
   | 'same_origin_destination'
-  | 'duplicate_consecutive_stop';
+  | 'duplicate_consecutive_stop'
+  | 'invalid_airport'
+  | 'blank_layover'
+  | 'invalid_temperature'
+  | 'weather_mismatch';
 
-export interface RouteValidationIssue {
-  code: RouteValidationIssueCode;
+export type ValidationSeverity = 'error' | 'warning';
+
+export interface FlightValidationIssue {
+  code: FlightValidationIssueCode;
   message: string;
+  severity: ValidationSeverity;
   stopIndex?: number;
-  field?: 'originAirport' | 'destinationAirport' | 'connections';
+  field?: 'originAirport' | 'destinationAirport' | 'connections' | 'temperature' | 'precipitation' | 'wind';
+}
+
+export interface FlightValidationResult {
+  blockingIssues: FlightValidationIssue[];
+  warnings: FlightValidationIssue[];
 }
 
 export interface PredictionRequest {
@@ -38,7 +49,6 @@ export interface PredictionRequest {
   departureTime: string;
   originAirport: string;
   destinationAirport: string;
-  duration: string;
   temperature: string;
   precipitation: PrecipitationType;
   wind: WindCondition;
@@ -65,7 +75,6 @@ export interface PredictionDebugRawInput {
   departureTime: string;
   originAirport: string;
   destinationAirport: string;
-  durationMinutes: number;
   temperatureF: number;
   precipitation: PrecipitationType;
   wind: WindCondition;
@@ -86,10 +95,12 @@ export interface PredictionDebugDerivedFeatures {
 export interface PredictionDebugScoreBreakdown {
   baseScore: number;
   routeContribution: number;
-  peakContribution: number;
+  hubBonus: number;
+  timeOfDayContribution: number;
   totalDelayContribution: number;
   precipitationBonus: number;
   windBonus: number;
+  weatherInteractionBonus: number;
   unclampedTotal: number;
   clampedTotal: number;
 }
@@ -97,10 +108,10 @@ export interface PredictionDebugScoreBreakdown {
 export interface PredictionDebugBlendInfo {
   heuristicProbability: number;
   modelProbability: number | null;
-  modelDelta: number | null;
-  scaledAdjustment: number | null;
-  adjustmentCap: number | null;
+  rawModelDisagreement: number | null;
+  maxModelShift: number | null;
   appliedAdjustment: number | null;
+  blendMethod: string;
   reasoning: string;
 }
 

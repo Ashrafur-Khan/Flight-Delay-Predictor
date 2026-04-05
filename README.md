@@ -10,7 +10,7 @@ This repository contains a small end-to-end flight delay prediction app built fr
 
 At a high level, the app works like this:
 
-1. A user enters flight details in the frontend such as departure date and time, origin and destination airports, optional layovers, flight duration, temperature, precipitation, and wind conditions.
+1. A user enters flight details in the frontend such as departure date and time, origin and destination airports, optional layovers, temperature, precipitation, and wind conditions.
 2. The frontend sends the direct-route flight details to the backend `POST /predict` endpoint.
 3. The backend converts those traveler-facing inputs into proxy features that resemble the BTS aggregate delay features used during training.
 4. The backend scores the request and returns a response containing:
@@ -260,7 +260,7 @@ For a normal local smoke test:
    - origin airport
    - destination airport
 5. Optionally add one or more layovers in itinerary order.
-6. Optionally fill in advanced factors such as duration, temperature, precipitation, and wind.
+6. Optionally fill in advanced factors such as temperature, precipitation, and wind.
 7. Click `Predict Delay Probability`.
 8. Confirm the result panel shows a probability, risk level, and explanation.
 9. If layovers were added, confirm the UI also shows an `Itinerary Breakdown` section with one entry per leg.
@@ -393,7 +393,6 @@ The frontend sends the backend a direct-route request shaped like this:
   "departureTime": "08:30",
   "originAirport": "JFK",
   "destinationAirport": "LAX",
-  "duration": "360",
   "temperature": "42",
   "precipitation": "rain",
   "wind": "moderate",
@@ -402,6 +401,8 @@ The frontend sends the backend a direct-route request shaped like this:
 ```
 
 `includeDebug` is optional and is intended for development-time inspection.
+
+During the current compatibility window, older clients may still send `duration`, but the backend ignores it and does not include it in normalized state or debug output.
 
 Layovers are not part of the backend contract today.
 
@@ -424,7 +425,6 @@ The backend returns:
       "departureTime": "08:30",
       "originAirport": "JFK",
       "destinationAirport": "LAX",
-      "durationMinutes": 360,
       "temperatureF": 42,
       "precipitation": "rain",
       "wind": "moderate"
