@@ -1,3 +1,4 @@
+
 export type PrecipitationType = 'none' | 'rain' | 'snow' | 'thunderstorms' | 'sleet';
 export type WindCondition = 'calm' | 'moderate' | 'strong';
 export type RiskLevel = 'low' | 'moderate' | 'high';
@@ -26,13 +27,16 @@ export type RouteValidationIssueCode =
   | 'same_origin_destination'
   | 'duplicate_consecutive_stop'
   | 'invalid_temperature'
-  | 'temperature_out_of_range';
+  | 'temperature_out_of_range'
+  | 'invalid_duration'           // ✅ NEW
+  | 'duration_out_of_range';     // ✅ NEW
 
 export type RouteValidationField =
   | 'originAirport'
   | 'destinationAirport'
   | 'connections'
-  | 'temperature';
+  | 'temperature'
+  | 'duration';
 
 export interface RouteValidationIssue {
   code: RouteValidationIssueCode;
