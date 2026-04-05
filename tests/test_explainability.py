@@ -29,8 +29,8 @@ class ExplainabilityTests(unittest.TestCase):
             path_used="hybrid_blend",
         )
 
-        self.assertIn("heuristic-led hybrid score", explanation)
-        self.assertIn("test-model", explanation)
+        self.assertIn("heuristic-led hybrid adjustment", explanation)
+        self.assertIn("trained BTS-based model", explanation)
 
     def test_build_explanation_mentions_fallback_when_no_model(self) -> None:
         payload = PredictionRequest(
@@ -50,7 +50,7 @@ class ExplainabilityTests(unittest.TestCase):
             path_used="heuristic_fallback",
         )
 
-        self.assertIn("development fallback estimator", explanation)
+        self.assertIn("advanced heuristic estimator", explanation)
 
 
 if __name__ == "__main__":

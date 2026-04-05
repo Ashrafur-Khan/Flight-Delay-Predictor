@@ -138,7 +138,6 @@ class PredictionService:
                     departureTime=bundle.normalized_payload.departure_time,
                     originAirport=bundle.normalized_payload.origin_airport,
                     destinationAirport=bundle.normalized_payload.destination_airport,
-                    durationMinutes=bundle.normalized_payload.duration_minutes,
                     temperatureF=bundle.normalized_payload.temperature_f,
                     precipitation=bundle.normalized_payload.precipitation,
                     wind=bundle.normalized_payload.wind,

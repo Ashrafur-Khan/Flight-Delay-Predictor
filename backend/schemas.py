@@ -16,6 +16,7 @@ class PredictionRequest(BaseModel):
     departureTime: str = Field(..., examples=["08:30"])
     originAirport: str = Field(..., min_length=3, examples=["JFK"])
     destinationAirport: str = Field(..., min_length=3, examples=["LAX"])
+    # Temporary compatibility shim for older clients; ignored by the backend and scheduled for removal.
     duration: str = Field(default="")
     temperature: str = Field(default="")
     precipitation: PrecipitationType = "none"
@@ -28,7 +29,6 @@ class PredictionDebugRawInput(BaseModel):
     departureTime: str
     originAirport: str
     destinationAirport: str
-    durationMinutes: int
     temperatureF: int
     precipitation: PrecipitationType
     wind: WindCondition

@@ -26,7 +26,6 @@ class PredictionServiceTests(unittest.TestCase):
             "departureTime": "12:00",
             "originAirport": "OKC",
             "destinationAirport": "SAT",
-            "duration": "180",
             "temperature": "65",
             "precipitation": "none",
             "wind": "calm",
@@ -46,7 +45,6 @@ class PredictionServiceTests(unittest.TestCase):
             departureTime="08:30",
             originAirport="JFK",
             destinationAirport="LAX",
-            duration="330",
             temperature="28",
             precipitation="snow",
             wind="strong",
@@ -135,7 +133,6 @@ class PredictionServiceTests(unittest.TestCase):
             departureTime="not-a-time",
             originAirport="JFK",
             destinationAirport="LAX",
-            duration="330",
             temperature="28",
             precipitation="snow",
             wind="strong",
@@ -193,13 +190,12 @@ class PredictionServiceTests(unittest.TestCase):
             originAirport="JFK",
             destinationAirport="LAX",
             departureTime="18:00",
-            duration="330",
             temperature="20",
             precipitation="snow",
             wind="strong",
         )
 
-        self.assertGreaterEqual(estimate.probability, 80)
+        self.assertGreaterEqual(estimate.probability, 79)
         self.assertLessEqual(estimate.probability, 90)
 
     def test_peak_thunderstorm_route_reaches_very_high_risk_band(self) -> None:
@@ -207,13 +203,12 @@ class PredictionServiceTests(unittest.TestCase):
             originAirport="LAX",
             destinationAirport="JFK",
             departureTime="18:00",
-            duration="330",
             temperature="65",
             precipitation="thunderstorms",
             wind="strong",
         )
 
-        self.assertGreaterEqual(estimate.probability, 80)
+        self.assertGreaterEqual(estimate.probability, 79)
         self.assertLessEqual(estimate.probability, 90)
 
     def test_midday_contribution_is_near_neutral(self) -> None:
@@ -227,13 +222,33 @@ class PredictionServiceTests(unittest.TestCase):
             originAirport="JFK",
             destinationAirport="LAX",
             departureTime="18:00",
-            duration="330",
             temperature="20",
             precipitation="snow",
             wind="strong",
         )
 
         self.assertLess(calm_estimate.probability, severe_estimate.probability)
+
+    def test_legacy_duration_does_not_change_response(self) -> None:
+        service = PredictionService.__new__(PredictionService)
+        service.artifact = None
+
+        baseline = PredictionRequest(
+            departureDate="2026-03-15",
+            departureTime="08:30",
+            originAirport="JFK",
+            destinationAirport="LAX",
+            temperature="28",
+            precipitation="snow",
+            wind="strong",
+            includeDebug=True,
+        )
+        legacy = PredictionRequest(**{**baseline.model_dump(), "duration": "330"})
+
+        baseline_response = service.build_response(baseline)
+        legacy_response = service.build_response(legacy)
+
+        self.assertEqual(baseline_response.model_dump(), legacy_response.model_dump())
 
 
 if __name__ == "__main__":

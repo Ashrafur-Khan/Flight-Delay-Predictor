@@ -16,7 +16,6 @@ export interface FlightFormData {
   originAirport: string;
   destinationAirport: string;
   connections: string[];
-  duration: string;
   temperature: string;
   precipitation: PrecipitationType;
   wind: WindCondition;
@@ -38,7 +37,6 @@ export interface PredictionRequest {
   departureTime: string;
   originAirport: string;
   destinationAirport: string;
-  duration: string;
   temperature: string;
   precipitation: PrecipitationType;
   wind: WindCondition;
@@ -65,7 +63,6 @@ export interface PredictionDebugRawInput {
   departureTime: string;
   originAirport: string;
   destinationAirport: string;
-  durationMinutes: number;
   temperatureF: number;
   precipitation: PrecipitationType;
   wind: WindCondition;

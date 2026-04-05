@@ -21,7 +21,6 @@ class AdapterTests(unittest.TestCase):
         )
         normalized, notes = normalize_request(payload)
         self.assertEqual(normalized.temperature_f, 65)
-        self.assertEqual(normalized.duration_minutes, 0)
         self.assertTrue(any("defaulted to 65F" in note for note in notes))
 
     def test_adapted_features_stay_in_expected_ranges(self) -> None:
@@ -30,7 +29,6 @@ class AdapterTests(unittest.TestCase):
             departureTime="18:45",
             originAirport="JFK",
             destinationAirport="LAX",
-            duration="360",
             temperature="18",
             precipitation="snow",
             wind="strong",
@@ -42,6 +40,19 @@ class AdapterTests(unittest.TestCase):
         self.assertGreaterEqual(features.peak_departure_score, 0.0)
         self.assertLessEqual(features.peak_departure_score, 1.0)
         self.assertGreater(features.arr_flights, 0)
+
+    def test_legacy_duration_is_accepted_but_ignored(self) -> None:
+        payload = PredictionRequest(
+            departureDate="2026-03-15",
+            departureTime="08:30",
+            originAirport="JFK",
+            destinationAirport="LAX",
+            duration="360",
+        )
+        normalized, _notes = normalize_request(payload)
+
+        self.assertEqual(normalized.origin_airport, "JFK")
+        self.assertEqual(normalized.destination_airport, "LAX")
 
 
 if __name__ == "__main__":

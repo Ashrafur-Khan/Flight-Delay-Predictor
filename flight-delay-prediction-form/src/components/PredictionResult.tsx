@@ -99,7 +99,6 @@ export function PredictionResult({ prediction, isLoading, hasSubmitted }: Predic
         departureTime: prediction.submittedRequest.departureTime,
         originAirport: prediction.submittedRequest.originAirport,
         destinationAirport: prediction.submittedRequest.destinationAirport,
-        duration: prediction.submittedRequest.duration,
         temperature: prediction.submittedRequest.temperature,
         precipitation: prediction.submittedRequest.precipitation,
         wind: prediction.submittedRequest.wind,

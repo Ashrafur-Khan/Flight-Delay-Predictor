@@ -33,7 +33,6 @@ export function preparePredictionRequest(data: FlightFormData): PreparedFlightDa
       departureTime: data.departureTime,
       originAirport: normalizeAirportCode(data.originAirport),
       destinationAirport: normalizeAirportCode(data.destinationAirport),
-      duration: data.duration,
       temperature: data.temperature,
       precipitation: data.precipitation,
       wind: data.wind,
@@ -213,12 +212,6 @@ const computeLegScore = (
   } else if (hour >= 17 && hour <= 20) {
     probability += 15;
     factors.push('evening peak hours');
-  }
-
-  const duration = parseInt(data.duration || '0', 10);
-  if (!Number.isNaN(duration) && duration > 300) {
-    probability += 8;
-    factors.push('long-haul timing');
   }
 
   const routeFactor = getRouteFactor(origin, destination);

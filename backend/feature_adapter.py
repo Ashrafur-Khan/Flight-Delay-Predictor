@@ -100,11 +100,6 @@ def adapt_request_to_model_features(payload: NormalizedPredictionInput) -> Adapt
         nas_delay_norm += 0.035
         late_aircraft_delay_norm += 0.03
 
-    if payload.duration_minutes >= 300:
-        late_aircraft_delay_norm += 0.03
-    elif payload.duration_minutes >= 180:
-        late_aircraft_delay_norm += 0.015
-
     arr_flights = int(round(70 + route_congestion_score * 70 + peak_departure_score * 45))
     total_delay_norm = (
         weather_delay_norm
