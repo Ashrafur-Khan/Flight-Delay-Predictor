@@ -165,11 +165,6 @@ export const normalizeAirportCode = (value: string): string => {
     return '';
   }
 
-  const codePrefixMatch = trimmed.match(/^([A-Za-z]{3})(?:\b|\s*-|$)/);
-  if (codePrefixMatch?.[1]) {
-    return codePrefixMatch[1].toUpperCase();
-  }
-
   const lowerValue = trimmed.toLowerCase();
   const knownAirport = AIRPORTS.find(airport => {
     const displayLabel = getAirportDisplayLabel(airport).toLowerCase();
@@ -181,5 +176,14 @@ export const normalizeAirportCode = (value: string): string => {
     );
   });
 
-  return knownAirport?.code ?? trimmed.toUpperCase();
+  if (knownAirport) {
+    return knownAirport.code;
+  }
+
+  const codePrefixMatch = trimmed.match(/^([A-Za-z]{3})(?:\b|\s*-|$)/);
+  if (codePrefixMatch?.[1]) {
+    return codePrefixMatch[1].toUpperCase();
+  }
+
+  return trimmed.toUpperCase();
 };

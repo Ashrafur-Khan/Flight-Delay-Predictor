@@ -21,15 +21,27 @@ export interface FlightFormData {
   wind: WindCondition;
 }
 
-export type RouteValidationIssueCode =
+export type FlightValidationIssueCode =
   | 'same_origin_destination'
-  | 'duplicate_consecutive_stop';
+  | 'duplicate_consecutive_stop'
+  | 'invalid_airport'
+  | 'blank_layover'
+  | 'invalid_temperature'
+  | 'weather_mismatch';
 
-export interface RouteValidationIssue {
-  code: RouteValidationIssueCode;
+export type ValidationSeverity = 'error' | 'warning';
+
+export interface FlightValidationIssue {
+  code: FlightValidationIssueCode;
   message: string;
+  severity: ValidationSeverity;
   stopIndex?: number;
-  field?: 'originAirport' | 'destinationAirport' | 'connections';
+  field?: 'originAirport' | 'destinationAirport' | 'connections' | 'temperature' | 'precipitation' | 'wind';
+}
+
+export interface FlightValidationResult {
+  blockingIssues: FlightValidationIssue[];
+  warnings: FlightValidationIssue[];
 }
 
 export interface PredictionRequest {

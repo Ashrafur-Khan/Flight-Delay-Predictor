@@ -1,12 +1,13 @@
 import { createApiClient } from '@/lib/api';
-import { normalizeAirportCode } from '@/lib/airports';
+import { findAirportByCode, normalizeAirportCode } from '@/lib/airports';
 import type {
   FlightFormData,
+  FlightValidationIssue,
+  FlightValidationResult,
   ItineraryPredictionSummary,
   LegPrediction,
   PredictionRequest,
   PredictionResponse,
-  RouteValidationIssue,
   RiskLevel,
 } from '@/types';
 
@@ -26,6 +27,18 @@ interface RouteStop {
   stopIndex: number;
 }
 
+const MIN_TEMPERATURE_F = -80;
+const MAX_TEMPERATURE_F = 140;
+
+const isKnownAirport = (value: string) => Boolean(findAirportByCode(normalizeAirportCode(value)));
+
+const isIntegerString = (value: string) => /^-?\d+$/.test(value.trim());
+
+const buildValidationResult = (issues: FlightValidationIssue[]): FlightValidationResult => ({
+  blockingIssues: issues.filter((issue) => issue.severity === 'error'),
+  warnings: issues.filter((issue) => issue.severity === 'warning'),
+});
+
 export function preparePredictionRequest(data: FlightFormData): PreparedFlightData {
   return {
     request: {
@@ -42,11 +55,108 @@ export function preparePredictionRequest(data: FlightFormData): PreparedFlightDa
   };
 }
 
-export function validateRoute(data: FlightFormData): RouteValidationIssue[] {
+export function validateFlightForm(data: FlightFormData): FlightValidationResult {
   const { request, normalizedConnections } = preparePredictionRequest(data);
-  const issues: RouteValidationIssue[] = [];
+  const issues: FlightValidationIssue[] = [];
   const normalizedOrigin = request.originAirport;
   const normalizedDestination = request.destinationAirport;
+  const normalizedTemperature = request.temperature.trim();
+
+  if (data.originAirport.trim() && !isKnownAirport(data.originAirport)) {
+    issues.push({
+      code: 'invalid_airport',
+      field: 'originAirport',
+      severity: 'error',
+      stopIndex: 0,
+      message: 'Origin must be selected from the supported airport list.',
+    });
+  }
+
+  if (data.destinationAirport.trim() && !isKnownAirport(data.destinationAirport)) {
+    issues.push({
+      code: 'invalid_airport',
+      field: 'destinationAirport',
+      severity: 'error',
+      stopIndex: normalizedConnections.length + 1,
+      message: 'Destination must be selected from the supported airport list.',
+    });
+  }
+
+  data.connections.forEach((connection, index) => {
+    const trimmedConnection = connection.trim();
+
+    if (!trimmedConnection) {
+      issues.push({
+        code: 'blank_layover',
+        field: 'connections',
+        severity: 'error',
+        stopIndex: index + 1,
+        message: `Layover ${index + 1} is blank. Fill it in or remove it before predicting.`,
+      });
+      return;
+    }
+
+    if (!isKnownAirport(connection)) {
+      issues.push({
+        code: 'invalid_airport',
+        field: 'connections',
+        severity: 'error',
+        stopIndex: index + 1,
+        message: `Layover ${index + 1} must be selected from the supported airport list.`,
+      });
+    }
+  });
+
+  if (normalizedTemperature) {
+    if (!isIntegerString(normalizedTemperature)) {
+      issues.push({
+        code: 'invalid_temperature',
+        field: 'temperature',
+        severity: 'error',
+        message: 'Temperature must be a whole number in degrees Fahrenheit.',
+      });
+    } else {
+      const temperature = Number.parseInt(normalizedTemperature, 10);
+      if (temperature < MIN_TEMPERATURE_F || temperature > MAX_TEMPERATURE_F) {
+        issues.push({
+          code: 'invalid_temperature',
+          field: 'temperature',
+          severity: 'error',
+          message: `Temperature must be between ${MIN_TEMPERATURE_F}F and ${MAX_TEMPERATURE_F}F.`,
+        });
+      }
+
+      if (
+        (request.precipitation === 'snow' || request.precipitation === 'sleet')
+        && temperature > 40
+      ) {
+        issues.push({
+          code: 'weather_mismatch',
+          field: 'precipitation',
+          severity: 'warning',
+          message: `${request.precipitation === 'snow' ? 'Snow' : 'Sleet'} above 40F is unusual. Double-check the weather inputs.`,
+        });
+      }
+
+      if (request.precipitation === 'rain' && temperature < 20) {
+        issues.push({
+          code: 'weather_mismatch',
+          field: 'precipitation',
+          severity: 'warning',
+          message: 'Rain below 20F is unusual. Double-check the weather inputs.',
+        });
+      }
+
+      if (request.precipitation === 'thunderstorms' && temperature < 32) {
+        issues.push({
+          code: 'weather_mismatch',
+          field: 'precipitation',
+          severity: 'warning',
+          message: 'Thunderstorms below 32F are unusual. Double-check the weather inputs.',
+        });
+      }
+    }
+  }
 
   if (
     normalizedOrigin
@@ -57,6 +167,7 @@ export function validateRoute(data: FlightFormData): RouteValidationIssue[] {
     issues.push({
       code: 'same_origin_destination',
       field: 'destinationAirport',
+      severity: 'error',
       stopIndex: 1,
       message: 'Origin and destination cannot be the same airport for a direct flight.',
     });
@@ -85,12 +196,13 @@ export function validateRoute(data: FlightFormData): RouteValidationIssue[] {
     issues.push({
       code: 'duplicate_consecutive_stop',
       field: nextStop.label.startsWith('Layover') ? 'connections' : 'destinationAirport',
+      severity: 'error',
       stopIndex: nextStop.stopIndex,
       message: `${nextStop.label} creates an impossible segment: ${currentStop.code} to ${nextStop.code}. Enter a different airport.`,
     });
   }
 
-  return issues;
+  return buildValidationResult(issues);
 }
 
 export async function submitPrediction(data: FlightFormData): Promise<PredictionResponse> {
