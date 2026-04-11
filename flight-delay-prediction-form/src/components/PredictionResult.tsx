@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { AlertCircle, AlertTriangle, CheckCircle, ChevronDown, ChevronUp } from 'lucide-react';
 import type { PredictionResponse, RiskLevel } from '@/types';
+import { ResultAssistant } from './ResultAssistant';
 
 interface PredictionResultProps {
   prediction: PredictionResponse | null;
@@ -129,6 +130,8 @@ export function PredictionResult({ prediction, isLoading, hasSubmitted }: Predic
           {prediction.explanation}
         </p>
       </div>
+
+      <ResultAssistant prediction={prediction} />
 
       {itinerarySummary && itinerarySummary.legs.length > 0 && (
         <div className="mt-6 rounded-lg border border-gray-200 bg-gray-50/80 p-5">

@@ -3,6 +3,7 @@ export type WindCondition = 'calm' | 'moderate' | 'strong';
 export type RiskLevel = 'low' | 'moderate' | 'high';
 export type PredictionSource = 'backend' | 'mock_fallback';
 export type PredictionPath = 'hybrid_blend' | 'model_artifact' | 'heuristic_fallback';
+export type ResultAssistantRole = 'user' | 'assistant';
 
 export interface Airport {
   code: string;
@@ -140,4 +141,52 @@ export interface PredictionResponse {
   itinerarySummary?: ItineraryPredictionSummary;
   source?: PredictionSource;
   submittedRequest?: PredictionRequest;
+}
+
+export interface PredictionExplanationResult {
+  probability: number;
+  riskLevel: RiskLevel;
+  explanation: string;
+}
+
+export interface PredictionExplanationLeg {
+  originAirport: string;
+  destinationAirport: string;
+  probability: number;
+  riskLevel: RiskLevel;
+  explanation: string;
+}
+
+export interface PredictionExplanationItinerarySummary {
+  legs: PredictionExplanationLeg[];
+  aggregateProbability: number;
+  aggregateRiskLevel: RiskLevel;
+  aggregateExplanation: string;
+}
+
+export interface PredictionExplanationContext {
+  source: PredictionSource;
+  submittedRequest: PredictionRequest;
+  displayedResult: PredictionExplanationResult;
+  directRouteResult?: PredictionExplanationResult;
+  itinerarySummary?: PredictionExplanationItinerarySummary;
+  debug?: PredictionDebugInfo;
+}
+
+export interface ResultAssistantMessage {
+  role: ResultAssistantRole;
+  content: string;
+}
+
+export interface ResultChatRequest {
+  predictionContext: PredictionExplanationContext;
+  question: string;
+  conversationHistory?: ResultAssistantMessage[];
+}
+
+export interface ResultChatResponse {
+  answer: string;
+  citations: string[];
+  disclaimer?: string | null;
+  suggestedFollowups?: string[] | null;
 }

@@ -19,7 +19,8 @@ At a high level, the app works like this:
    - `explanation`
    - optional `debug` details when explicitly requested
 5. If the user added layovers, the frontend computes per-leg and itinerary-level connected-flight scores on top of the backend or fallback direct-route prediction.
-6. The frontend renders the final result directly in the UI.
+6. The frontend can send the rendered result plus debug context to `POST /explain` for grounded follow-up Q&A about that result.
+7. The frontend renders the final result directly in the UI.
 
 ### What the app is actually predicting
 
@@ -67,11 +68,19 @@ There is also a development-only debugging path:
 - The frontend shows those details in a collapsible `Debug Details` panel so it is easier to tell whether the result came from the backend or the frontend fallback.
 - When layovers are present, the debug panel also shows the displayed itinerary score alongside the raw backend or direct-route score.
 
+There is also a grounded explanation path:
+
+- The result panel includes an `Ask About This Result` assistant section after a prediction exists.
+- The assistant does not rescore the flight. It only explains the current displayed result, the raw direct-route result when present, itinerary legs, and backend debug metadata when available.
+- The frontend sends a structured `predictionContext` object to `POST /explain` instead of sending raw user input alone.
+- If no external provider is configured, the backend uses a deterministic grounded fallback explainer so the feature still works locally.
+
 So the repository supports a few different states:
 
 - Full stack with trained model: frontend -> backend -> trained model artifact
 - Full stack without trained model in local/dev mode: frontend -> backend -> heuristic backend fallback
 - Frontend only or broken API connection: frontend -> mock prediction fallback
+- Result explanation assistant: frontend -> backend `/explain` -> grounded explanation client or deterministic fallback
 - Connected itinerary mode: frontend itinerary scoring layered on top of any of the three paths above
 
 In the repository's current default state, `backend/model.pkl` is not checked in, so local predictions use the backend heuristic fallback unless you train and save a model artifact.
@@ -94,6 +103,7 @@ Flight-Delay-Predictor/
 │   ├── main.py
 │   ├── model_service.py
 │   ├── normalization.py
+│   ├── result_explanation_service.py
 │   ├── schemas.py
 │   ├── service.py
 │   ├── training.py
@@ -120,10 +130,10 @@ Flight-Delay-Predictor/
 ### What each folder is responsible for
 
 - `flight-delay-prediction-form/`
-  The frontend app. It renders the form, normalizes airport input before submit, supports connected-flight layovers, calls the API, displays itinerary and direct-route results, and exposes a dev-only debug panel when backend debug data is available.
+  The frontend app. It renders the form, normalizes airport input before submit, supports connected-flight layovers, calls the API, displays itinerary and direct-route results, exposes a dev-only debug panel when backend debug data is available, and provides a grounded follow-up assistant for the current result.
 
 - `backend/`
-  The API and scoring layer. It exposes `GET /` and `POST /predict`, validates requests, normalizes user inputs, adapts them into BTS-style model features, loads a versioned model artifact when present, and can return structured debug metadata when requested.
+  The API and scoring layer. It exposes `GET /`, `POST /predict`, and `POST /explain`, validates requests, normalizes user inputs, adapts them into BTS-style model features, loads a versioned model artifact when present, can return structured debug metadata when requested, and can answer grounded follow-up questions about an already-computed result.
 
 - `data-analysis/`
   The BTS dataset cleaning and feature engineering workflow. It prepares the cleaned CSV and metadata that `backend/train_model.py` uses for model training.
@@ -219,6 +229,22 @@ VITE_API_BASE_URL=http://localhost:8000
 
 If `VITE_API_BASE_URL` is missing, the frontend skips the backend call and uses its local mock prediction path.
 
+### 4. Optional grounded explanation provider configuration
+
+The result assistant works without extra setup, but it will use a deterministic fallback explainer unless you configure an external provider.
+
+Supported environment variables for the backend:
+
+```bash
+FLIGHT_DELAY_EXPLANATION_LLM_PROVIDER=openai_compatible
+FLIGHT_DELAY_EXPLANATION_LLM_API_URL=https://api.openai.com/v1/chat/completions
+FLIGHT_DELAY_EXPLANATION_LLM_API_KEY=your_api_key
+FLIGHT_DELAY_EXPLANATION_LLM_MODEL=gpt-4.1-mini
+FLIGHT_DELAY_EXPLANATION_LLM_TIMEOUT_SECONDS=15
+```
+
+If these are omitted, `POST /explain` still works locally using the deterministic grounded fallback in `backend/result_explanation_service.py`.
+
 ## Running the app locally
 
 Start the backend from the repo root:
@@ -246,6 +272,7 @@ The local app endpoints are:
 - If you completed the dataset-generation and training steps, the backend should score requests with the trained model artifact.
 - If you did not complete those steps, the backend can still run in local development, but it will use the heuristic fallback estimator instead of the trained model.
 - If the frontend cannot reach the backend at all, it can still display predictions using its own frontend mock fallback.
+- If no external explanation provider is configured, the backend still answers result follow-up questions using its deterministic grounded fallback explainer.
 
 ## End-to-end test flow
 
@@ -264,6 +291,7 @@ For a normal local smoke test:
 7. Click `Predict Delay Probability`.
 8. Confirm the result panel shows a probability, risk level, and explanation.
 9. If layovers were added, confirm the UI also shows an `Itinerary Breakdown` section with one entry per leg.
+10. Ask a follow-up question in `Ask About This Result` and confirm the answer stays consistent with the displayed score and explanation.
 
 In Vite dev mode, you can also expand `Debug Details` in the result panel to inspect:
 
@@ -274,6 +302,12 @@ In Vite dev mode, you can also expand `Debug Details` in the result panel to ins
 - the derived feature values
 - the raw direct-route score versus the displayed itinerary score when layovers are present
 - fallback reasons or backend notes explaining defaulted values or thresholds that were not crossed
+
+The grounded assistant should follow the same source-of-truth rules:
+
+- it must not change the displayed probability or risk label
+- it should explain the displayed itinerary result separately from the raw direct-route result when layovers are present
+- it should distinguish frontend mock fallback, backend heuristic fallback, and backend hybrid-blend paths when that information is available
 
 ### How to tell which prediction path is being used
 
@@ -333,6 +367,9 @@ This script:
 - `flight-delay-prediction-form/src/services/prediction.ts`
   Frontend prediction service. Normalizes airport values, requests backend debug data in dev mode, tracks whether the response came from the backend or the frontend fallback, computes connected-itinerary leg scores, and rewrites the displayed result to the aggregate itinerary score when layovers exist.
 
+- `flight-delay-prediction-form/src/services/resultAssistant.ts`
+  Frontend explanation service. Builds a grounded explanation context from the current rendered result, derives suggested prompts, and sends follow-up questions to `/explain`.
+
 - `flight-delay-prediction-form/src/lib/api.ts`
   Small API client wrapper around `fetch`. Builds requests from `VITE_API_BASE_URL`.
 
@@ -346,7 +383,10 @@ This script:
   Airport selector UI. Stores airport codes in form state while still showing user-friendly labels.
 
 - `flight-delay-prediction-form/src/components/PredictionResult.tsx`
-  Prediction result UI. Shows the main result, the connected-itinerary breakdown, and a dev-only debug panel when debug payloads are present.
+  Prediction result UI. Shows the main result, the grounded follow-up assistant, the connected-itinerary breakdown, and a dev-only debug panel when debug payloads are present.
+
+- `flight-delay-prediction-form/src/components/ResultAssistant.tsx`
+  Grounded result-chat UI. Lets the user ask follow-up questions about the current result without changing the underlying score.
 
 - `flight-delay-prediction-form/vite.config.ts`
   Vite config, including the dev server port (`3000`).
@@ -354,10 +394,13 @@ This script:
 ### Backend
 
 - `backend/main.py`
-  FastAPI app entry point. Wires up CORS, the health endpoint, and the `/predict` endpoint.
+  FastAPI app entry point. Wires up CORS, the health endpoint, the `/predict` endpoint, and the `/explain` endpoint.
 
 - `backend/service.py`
   Orchestrates request normalization, feature adaptation, trained-model inference, local heuristic fallback, and debug response assembly.
+
+- `backend/result_explanation_service.py`
+  Builds grounded explanation context, applies source-aware guardrails, and routes result Q&A to either an external OpenAI-compatible provider or the deterministic local fallback explainer.
 
 - `backend/feature_adapter.py`
   Converts traveler-facing single-leg inputs into the fixed BTS-style feature vector expected by the trained model.
@@ -378,6 +421,7 @@ This script:
 - The backend model is trained on BTS aggregate operational features rather than direct traveler-facing inputs.
 - Airport and weather handling are heuristic, not driven by live aviation or weather APIs.
 - The backend still uses a local/dev heuristic fallback when no trained model artifact is present.
+- The grounded explanation layer is scoped to explaining the current result. It is not a general travel-planning copilot and it does not fetch live travel or weather data.
 - Connected-flight scoring is frontend-only and heuristic. Layovers are not sent to the backend model, and the itinerary score is not a learned multi-leg prediction.
 - The frontend fallback can make the UI appear functional even when the backend is unavailable, so testing should include checking backend logs, the backend health endpoint, or the dev-only debug panel.
 
@@ -405,6 +449,91 @@ The frontend sends the backend a direct-route request shaped like this:
 During the current compatibility window, older clients may still send `duration`, but the backend ignores it and does not include it in normalized state or debug output.
 
 Layovers are not part of the backend contract today.
+
+### Backend grounded explanation request contract
+
+The frontend sends the backend a grounded result-chat request shaped like this:
+
+```json
+{
+  "predictionContext": {
+    "source": "backend",
+    "submittedRequest": {
+      "departureDate": "2026-03-15",
+      "departureTime": "08:30",
+      "originAirport": "JFK",
+      "destinationAirport": "LAX",
+      "temperature": "42",
+      "precipitation": "rain",
+      "wind": "moderate",
+      "includeDebug": true
+    },
+    "displayedResult": {
+      "probability": 60,
+      "riskLevel": "moderate",
+      "explanation": "..."
+    },
+    "directRouteResult": {
+      "probability": 47,
+      "riskLevel": "moderate",
+      "explanation": "..."
+    },
+    "itinerarySummary": {
+      "aggregateProbability": 60,
+      "aggregateRiskLevel": "moderate",
+      "aggregateExplanation": "...",
+      "legs": [
+        {
+          "originAirport": "JFK",
+          "destinationAirport": "ORD",
+          "probability": 58,
+          "riskLevel": "moderate",
+          "explanation": "..."
+        }
+      ]
+    },
+    "debug": {
+      "pathUsed": "hybrid_blend",
+      "modelLoaded": true,
+      "modelVersion": "demo-model",
+      "datasetVersion": "demo-dataset",
+      "rawInput": {
+        "departureDate": "2026-03-15",
+        "departureTime": "08:30",
+        "originAirport": "JFK",
+        "destinationAirport": "LAX",
+        "temperatureF": 42,
+        "precipitation": "rain",
+        "wind": "moderate"
+      },
+      "derivedFeatures": {
+        "month": 3,
+        "arr_flights": 136,
+        "weather_delay_norm": 0.14,
+        "nas_delay_norm": 0.257,
+        "security_delay_norm": 0.0163,
+        "late_aircraft_delay_norm": 0.0925,
+        "total_delay_norm": 0.5058,
+        "route_congestion_score": 0.75,
+        "peak_departure_score": 0.35
+      },
+      "finalProbability": 47,
+      "notes": [
+        "..."
+      ]
+    }
+  },
+  "question": "Explain the itinerary impact.",
+  "conversationHistory": [
+    {
+      "role": "user",
+      "content": "Why is this risk moderate?"
+    }
+  ]
+}
+```
+
+`predictionContext` is the source of truth for the assistant. The backend explanation layer should not infer from raw form input alone.
 
 ### Backend response contract
 
@@ -450,6 +579,31 @@ The backend returns:
 ```
 
 When `includeDebug` is omitted or `false`, the backend returns the same top-level `probability`, `riskLevel`, and `explanation` fields without the `debug` object.
+
+### Backend grounded explanation response contract
+
+The backend returns:
+
+```json
+{
+  "answer": "...",
+  "citations": [
+    "displayedResult.probability",
+    "displayedResult.explanation",
+    "debug.pathUsed",
+    "itinerarySummary.legs"
+  ],
+  "disclaimer": "This answer is grounded in the backend hybrid blend path, where the trained model can only make a bounded adjustment to the heuristic score.",
+  "suggestedFollowups": [
+    "Which factors mattered most here?",
+    "Summarize this result in plain language.",
+    "Explain the itinerary impact.",
+    "What does hybrid blend mean here?"
+  ]
+}
+```
+
+`disclaimer` is optional and appears when the result source or scoring path requires extra guardrails, such as frontend mock fallback or heuristic fallback.
 
 ### Frontend-augmented response shape for connected itineraries
 

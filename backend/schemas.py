@@ -7,8 +7,10 @@ from pydantic import BaseModel, Field
 
 RiskLevel = Literal["low", "moderate", "high"]
 PredictionPath = Literal["hybrid_blend", "model_artifact", "heuristic_fallback"]
+PredictionSource = Literal["backend", "mock_fallback"]
 PrecipitationType = Literal["none", "rain", "snow", "thunderstorms", "sleet"]
 WindCondition = Literal["calm", "moderate", "strong"]
+ChatMessageRole = Literal["user", "assistant"]
 
 
 class PredictionRequest(BaseModel):
@@ -97,3 +99,51 @@ class HealthResponse(BaseModel):
     modelVersion: str | None
     datasetVersion: str | None
     predictionMode: PredictionPath
+
+
+class PredictionExplanationResult(BaseModel):
+    probability: int = Field(..., ge=0, le=100)
+    riskLevel: RiskLevel
+    explanation: str
+
+
+class PredictionExplanationLeg(BaseModel):
+    originAirport: str = Field(..., min_length=3)
+    destinationAirport: str = Field(..., min_length=3)
+    probability: int = Field(..., ge=0, le=100)
+    riskLevel: RiskLevel
+    explanation: str
+
+
+class PredictionExplanationItinerarySummary(BaseModel):
+    legs: list[PredictionExplanationLeg]
+    aggregateProbability: int = Field(..., ge=0, le=100)
+    aggregateRiskLevel: RiskLevel
+    aggregateExplanation: str
+
+
+class PredictionExplanationContext(BaseModel):
+    source: PredictionSource
+    submittedRequest: PredictionRequest
+    displayedResult: PredictionExplanationResult
+    directRouteResult: PredictionExplanationResult | None = None
+    itinerarySummary: PredictionExplanationItinerarySummary | None = None
+    debug: PredictionDebugInfo | None = None
+
+
+class ResultChatMessage(BaseModel):
+    role: ChatMessageRole
+    content: str = Field(..., min_length=1, max_length=1500)
+
+
+class ResultChatRequest(BaseModel):
+    predictionContext: PredictionExplanationContext
+    question: str = Field(..., min_length=1, max_length=500)
+    conversationHistory: list[ResultChatMessage] = Field(default_factory=list, max_length=6)
+
+
+class ResultChatResponse(BaseModel):
+    answer: str
+    citations: list[str]
+    disclaimer: str | None = None
+    suggestedFollowups: list[str] | None = None
