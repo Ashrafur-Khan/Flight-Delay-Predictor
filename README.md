@@ -19,7 +19,7 @@ At a high level, the app works like this:
    - `explanation`
    - optional `debug` details when explicitly requested
 5. If the user added layovers, the frontend computes per-leg and itinerary-level connected-flight scores on top of the backend or fallback direct-route prediction.
-6. The frontend can send the rendered result plus debug context to `POST /explain` for grounded follow-up Q&A about that result.
+6. The frontend can use the rendered result plus debug context for grounded follow-up Q&A about that result in a client-side assistant.
 7. The frontend renders the final result directly in the UI.
 
 ### What the app is actually predicting
@@ -72,15 +72,17 @@ There is also a grounded explanation path:
 
 - The result panel includes an `Ask About This Result` assistant section after a prediction exists.
 - The assistant does not rescore the flight. It only explains the current displayed result, the raw direct-route result when present, itinerary legs, and backend debug metadata when available.
-- The frontend sends a structured `predictionContext` object to `POST /explain` instead of sending raw user input alone.
-- If no external provider is configured, the backend uses a deterministic grounded fallback explainer so the feature still works locally.
+- The frontend builds a structured `predictionContext` object instead of reasoning from raw user input alone.
+- The default assistant path is fully client-side and deterministic.
+- An optional client-side on-device LLM enhancement can be enabled in the frontend, but it is only used to rewrite or polish the grounded answer and must not change the facts.
+- If the optional client-side LLM enhancement is not enabled, cannot initialize, or is blocked by browser capability or policy, the assistant falls back to the deterministic grounded explainer so the feature still works locally.
 
 So the repository supports a few different states:
 
 - Full stack with trained model: frontend -> backend -> trained model artifact
 - Full stack without trained model in local/dev mode: frontend -> backend -> heuristic backend fallback
 - Frontend only or broken API connection: frontend -> mock prediction fallback
-- Result explanation assistant: frontend -> backend `/explain` -> grounded explanation client or deterministic fallback
+- Result explanation assistant: frontend -> client-side grounded explanation service -> optional on-device LLM polish or deterministic fallback
 - Connected itinerary mode: frontend itinerary scoring layered on top of any of the three paths above
 
 In the repository's current default state, `backend/model.pkl` is not checked in, so local predictions use the backend heuristic fallback unless you train and save a model artifact.
@@ -130,7 +132,7 @@ Flight-Delay-Predictor/
 ### What each folder is responsible for
 
 - `flight-delay-prediction-form/`
-  The frontend app. It renders the form, normalizes airport input before submit, supports connected-flight layovers, calls the API, displays itinerary and direct-route results, exposes a dev-only debug panel when backend debug data is available, and provides a grounded follow-up assistant for the current result.
+  The frontend app. It renders the form, normalizes airport input before submit, supports connected-flight layovers, calls the API, displays itinerary and direct-route results, exposes a dev-only debug panel when backend debug data is available, and provides a grounded client-side follow-up assistant for the current result.
 
 - `backend/`
   The API and scoring layer. It exposes `GET /`, `POST /predict`, and `POST /explain`, validates requests, normalizes user inputs, adapts them into BTS-style model features, loads a versioned model artifact when present, can return structured debug metadata when requested, and can answer grounded follow-up questions about an already-computed result.
@@ -229,9 +231,23 @@ VITE_API_BASE_URL=http://localhost:8000
 
 If `VITE_API_BASE_URL` is missing, the frontend skips the backend call and uses its local mock prediction path.
 
-### 4. Optional grounded explanation provider configuration
+### 4. Optional client-side result assistant model
 
-The result assistant works without extra setup, but it will use a deterministic fallback explainer unless you configure an external provider.
+The result assistant works without extra setup. Its default path is a deterministic grounded client-side explainer.
+
+The frontend also supports an optional on-device LLM enhancement for the result assistant. This is disabled by default and only affects the assistant phrasing layer. It does not change scoring, probabilities, risk labels, or citations.
+
+To enable the optional client-side LLM layer in the frontend:
+
+```bash
+VITE_ENABLE_LOCAL_RESULT_ASSISTANT_MODEL=true
+```
+
+When enabled, the frontend attempts to load a small local Transformers.js model in the browser. If the model cannot activate because WebGPU is unavailable, device capability is insufficient, CSP blocks the runtime, or model loading fails, the assistant automatically falls back to the deterministic grounded client-side explainer.
+
+### 5. Optional backend grounded explanation provider configuration
+
+The backend still supports an optional grounded explanation provider for `POST /explain`, but the default app experience no longer depends on it because the result assistant now works client-side.
 
 Supported environment variables for the backend:
 
@@ -243,7 +259,7 @@ FLIGHT_DELAY_EXPLANATION_LLM_MODEL=gpt-4.1-mini
 FLIGHT_DELAY_EXPLANATION_LLM_TIMEOUT_SECONDS=15
 ```
 
-If these are omitted, `POST /explain` still works locally using the deterministic grounded fallback in `backend/result_explanation_service.py`.
+If these are omitted, backend `POST /explain` still works locally using the deterministic grounded fallback in `backend/result_explanation_service.py`.
 
 ## Running the app locally
 
@@ -272,7 +288,9 @@ The local app endpoints are:
 - If you completed the dataset-generation and training steps, the backend should score requests with the trained model artifact.
 - If you did not complete those steps, the backend can still run in local development, but it will use the heuristic fallback estimator instead of the trained model.
 - If the frontend cannot reach the backend at all, it can still display predictions using its own frontend mock fallback.
-- If no external explanation provider is configured, the backend still answers result follow-up questions using its deterministic grounded fallback explainer.
+- The result assistant works client-side by default.
+- If the optional client-side LLM layer is enabled and activates successfully, it can rewrite the grounded answer locally in the browser.
+- If that optional client-side LLM layer does not activate, the assistant falls back to the deterministic grounded client-side explainer.
 
 ## End-to-end test flow
 
@@ -292,6 +310,7 @@ For a normal local smoke test:
 8. Confirm the result panel shows a probability, risk level, and explanation.
 9. If layovers were added, confirm the UI also shows an `Itinerary Breakdown` section with one entry per leg.
 10. Ask a follow-up question in `Ask About This Result` and confirm the answer stays consistent with the displayed score and explanation.
+11. If `VITE_ENABLE_LOCAL_RESULT_ASSISTANT_MODEL=true` is enabled, confirm the assistant still returns grounded answers and falls back cleanly to the deterministic client-side explainer when the local model cannot activate.
 
 In Vite dev mode, you can also expand `Debug Details` in the result panel to inspect:
 
@@ -368,7 +387,10 @@ This script:
   Frontend prediction service. Normalizes airport values, requests backend debug data in dev mode, tracks whether the response came from the backend or the frontend fallback, computes connected-itinerary leg scores, and rewrites the displayed result to the aggregate itinerary score when layovers exist.
 
 - `flight-delay-prediction-form/src/services/resultAssistant.ts`
-  Frontend explanation service. Builds a grounded explanation context from the current rendered result, derives suggested prompts, and sends follow-up questions to `/explain`.
+  Frontend explanation service. Builds a grounded explanation context from the current rendered result, derives suggested prompts, and routes follow-up questions into the client-side assistant flow.
+
+- `flight-delay-prediction-form/src/services/localResultAssistant.ts`
+  Client-side grounded result assistant. Generates deterministic answers from structured prediction context and can optionally use a small local browser model to polish the answer when explicitly enabled.
 
 - `flight-delay-prediction-form/src/lib/api.ts`
   Small API client wrapper around `fetch`. Builds requests from `VITE_API_BASE_URL`.

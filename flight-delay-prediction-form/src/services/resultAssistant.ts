@@ -1,14 +1,11 @@
-import { createApiClient } from '@/lib/api';
 import type {
   PredictionExplanationContext,
   PredictionExplanationLeg,
   PredictionResponse,
   ResultAssistantMessage,
-  ResultChatRequest,
   ResultChatResponse,
 } from '@/types';
-
-const apiClient = createApiClient();
+import { answerResultChat, deriveContextDisclaimer } from '@/services/localResultAssistant';
 
 export const buildPredictionExplanationContext = (
   prediction: PredictionResponse | null,
@@ -87,15 +84,7 @@ export const getAssistantContextNotice = (
     return null;
   }
 
-  if (context.source === 'mock_fallback') {
-    return 'Assistant answers will be grounded in the frontend mock fallback result because the backend prediction was not used.';
-  }
-
-  if (context.debug?.pathUsed === 'heuristic_fallback') {
-    return 'Assistant answers will be grounded in the backend heuristic fallback result because no trained model artifact was active.';
-  }
-
-  return null;
+  return deriveContextDisclaimer(context);
 };
 
 export const submitResultChat = async (
@@ -103,11 +92,5 @@ export const submitResultChat = async (
   question: string,
   conversationHistory: ResultAssistantMessage[],
 ): Promise<ResultChatResponse> => {
-  const payload: ResultChatRequest = {
-    predictionContext: context,
-    question,
-    conversationHistory,
-  };
-
-  return apiClient.post<ResultChatRequest, ResultChatResponse>('/explain', payload);
+  return answerResultChat(context, question, conversationHistory);
 };

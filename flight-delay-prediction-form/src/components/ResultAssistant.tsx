@@ -132,15 +132,20 @@ export function ResultAssistant({ prediction }: ResultAssistantProps) {
           />
         </div>
 
-        <div className="flex items-center justify-between gap-3">
-          <p className="text-xs text-slate-500">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <p className="text-xs text-slate-500 sm:flex-1">
             The assistant is grounded to the current prediction only.
           </p>
           <button
             type="button"
             onClick={() => void handleSubmit(question)}
             disabled={!question.trim() || isSubmitting}
-            className="rounded-lg bg-slate-900 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-slate-800 disabled:cursor-not-allowed disabled:bg-slate-400"
+            className="self-start rounded-lg border border-slate-900 px-4 py-2 text-sm font-medium shadow-sm transition-colors disabled:cursor-not-allowed disabled:border-slate-300 sm:self-auto"
+            style={{
+              minWidth: '5.5rem',
+              backgroundColor: !question.trim() || isSubmitting ? '#94a3b8' : '#0f172a',
+              color: '#ffffff',
+            }}
           >
             {isSubmitting ? 'Explaining...' : 'Ask'}
           </button>
