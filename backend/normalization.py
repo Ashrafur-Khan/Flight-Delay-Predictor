@@ -29,15 +29,18 @@ def parse_departure_date(value: str) -> date:
 
 def parse_departure_hour(value: str) -> int:
     try:
-        return max(0, min(int(value.split(":")[0]), 23))
-    except Exception:
+        hour_text = value.split(":", maxsplit=1)[0]
+        hour = int(hour_text)
+    except (TypeError, ValueError):
         return 12
+
+    return max(0, min(hour, 23))
 
 
 def parse_int(value: str, default: int = 0) -> int:
     try:
         return int(value)
-    except Exception:
+    except (TypeError, ValueError):
         return default
 
 
@@ -46,8 +49,11 @@ def normalize_airport_code(value: str) -> str:
     if not trimmed:
         return ""
 
-    match = re.match(r"^([A-Za-z]{3})", trimmed)
-    return match.group(1).upper() if match else trimmed.upper()
+    code_prefix_match = re.match(r"^([A-Za-z]{3})(?:\b|\s*-|$)", trimmed)
+    if code_prefix_match is not None:
+        return code_prefix_match.group(1).upper()
+
+    return trimmed.upper()
 
 
 def airport_traffic_bucket(airport: str) -> Literal["high", "medium", "other"]:
@@ -64,6 +70,22 @@ def normalize_request(payload: PredictionRequest) -> tuple[NormalizedPredictionI
     origin_airport = normalize_airport_code(payload.originAirport)
     destination_airport = normalize_airport_code(payload.destinationAirport)
     temperature_f = parse_int(payload.temperature, default=65)
+
+    if payload.originAirport.strip() and origin_airport != payload.originAirport.strip():
+        notes.append(f"Origin airport normalized from '{payload.originAirport}' to '{origin_airport}'.")
+    if payload.destinationAirport.strip() and destination_airport != payload.destinationAirport.strip():
+        notes.append(f"Destination airport normalized from '{payload.destinationAirport}' to '{destination_airport}'.")
+
+    if airport_traffic_bucket(origin_airport) == "other":
+        notes.append(f"Origin airport '{origin_airport}' did not match a known traffic bucket; default route weighting applied.")
+    if airport_traffic_bucket(destination_airport) == "other":
+        notes.append(f"Destination airport '{destination_airport}' did not match a known traffic bucket; default route weighting applied.")
+
+    if payload.temperature.strip():
+        if 20 < temperature_f < 95:
+            notes.append("Temperature did not cross a scoring threshold.")
+    else:
+        notes.append("Temperature not provided; defaulted to 65F.")
 
     if payload.precipitation == "none":
         notes.append("No precipitation penalty applied.")
