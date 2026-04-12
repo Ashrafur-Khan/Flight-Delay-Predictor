@@ -39,7 +39,6 @@ MODEL_FEATURE_NAMES = [
     "late_aircraft_delay_norm",
     "total_delay_norm",
 ]
-ADAPTER_VERSION = "adapter_v1"
 
 
 def compute_route_congestion(origin: str, destination: str) -> float:
@@ -73,34 +72,65 @@ def adapt_request_to_model_features(payload: NormalizedPredictionInput) -> Adapt
     route_congestion_score = compute_route_congestion(payload.origin_airport, payload.destination_airport)
     peak_departure_score = compute_peak_departure_score(departure_hour)
 
+    # -----------------------------
+    # WEATHER BASE
+    # -----------------------------
     weather_delay_norm = 0.02
+
     if payload.precipitation == "rain":
-        weather_delay_norm += 0.08
+        weather_delay_norm += 0.10
     elif payload.precipitation == "snow":
-        weather_delay_norm += 0.2
+        weather_delay_norm += 0.25
     elif payload.precipitation == "thunderstorms":
-        weather_delay_norm += 0.18
+        weather_delay_norm += 0.30
     elif payload.precipitation == "sleet":
-        weather_delay_norm += 0.14
+        weather_delay_norm += 0.18
 
+    # Temperature impact
     if payload.temperature_f <= 20:
-        weather_delay_norm += 0.06
+        weather_delay_norm += 0.08
     elif payload.temperature_f >= 95:
-        weather_delay_norm += 0.04
+        weather_delay_norm += 0.05
 
-    nas_delay_norm = 0.04 + route_congestion_score * 0.12 + peak_departure_score * 0.08
-    security_delay_norm = 0.003 + route_congestion_score * 0.008
-    late_aircraft_delay_norm = 0.03 + peak_departure_score * 0.10
-
+    # -----------------------------
+    # WIND (CATEGORICAL)
+    # -----------------------------
     if payload.wind == "moderate":
-        weather_delay_norm += 0.04
-        nas_delay_norm += 0.015
+        weather_delay_norm += 0.05
     elif payload.wind == "strong":
-        weather_delay_norm += 0.09
-        nas_delay_norm += 0.035
-        late_aircraft_delay_norm += 0.03
+        weather_delay_norm += 0.12
 
-    arr_flights = int(round(70 + route_congestion_score * 70 + peak_departure_score * 45))
+    # -----------------------------
+    # WIND (NUMERIC IF AVAILABLE)
+    # -----------------------------
+    if hasattr(payload, "wind_mph") and payload.wind_mph is not None:
+        if payload.wind_mph > 25:
+            weather_delay_norm += 0.15
+        elif payload.wind_mph > 15:
+            weather_delay_norm += 0.08
+        elif payload.wind_mph > 10:
+            weather_delay_norm += 0.04
+
+    # -----------------------------
+    # PRECIP (NUMERIC IF AVAILABLE)
+    # -----------------------------
+    if hasattr(payload, "precip_mm") and payload.precip_mm is not None:
+        if payload.precip_mm > 5:
+            weather_delay_norm += 0.18
+        elif payload.precip_mm > 2:
+            weather_delay_norm += 0.10
+        elif payload.precip_mm > 0:
+            weather_delay_norm += 0.05
+
+    # -----------------------------
+    # OTHER DELAYS
+    # -----------------------------
+    nas_delay_norm = 0.04 + route_congestion_score * 0.15 + peak_departure_score * 0.10
+    security_delay_norm = 0.003 + route_congestion_score * 0.01
+    late_aircraft_delay_norm = 0.03 + peak_departure_score * 0.12
+
+    arr_flights = int(round(70 + route_congestion_score * 80 + peak_departure_score * 50))
+
     total_delay_norm = (
         weather_delay_norm
         + nas_delay_norm

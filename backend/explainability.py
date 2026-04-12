@@ -71,7 +71,7 @@ HUB_AIRPORTS = {"ATL", "ORD", "DFW", "DEN", "LAX", "JFK"}
 
 
 # -----------------------------
-# Utility Functions
+# Utility
 # -----------------------------
 
 def clamp_probability(value: int) -> int:
@@ -111,49 +111,82 @@ def is_peak_hour(hour: int) -> bool:
 
 
 # -----------------------------
-# Heuristic Estimator (UPGRADED)
+# Heuristic (WEATHER-ENHANCED)
 # -----------------------------
 
 def heuristic_probability(
     payload: NormalizedPredictionInput,
     features: AdaptedFeatures,
 ) -> HeuristicEstimate:
-    base_score = 11
 
-    route_contribution = int(round(features.route_congestion_score * 8))
+    base_score = 10
+
+    route_contribution = int(round(features.route_congestion_score * 10))
 
     hub_bonus = 0
     if payload.origin_airport in HUB_AIRPORTS:
-        hub_bonus += 2
+        hub_bonus += 3
     if payload.destination_airport in HUB_AIRPORTS:
-        hub_bonus += 2
+        hub_bonus += 3
 
     hour = parse_departure_hour(payload.departure_time)
-    time_of_day_contribution = int(round(time_risk(hour) * 8))
+    time_of_day_contribution = int(round(time_risk(hour) * 10))
+
     total_delay_contribution = delay_contribution_points(features.total_delay_norm)
 
+    # -----------------------------
+    # WEATHER (CATEGORICAL)
+    # -----------------------------
     precipitation_bonus = 0
     if payload.precipitation == "thunderstorms":
-        precipitation_bonus = 14
+        precipitation_bonus += 15
     elif payload.precipitation == "snow":
-        precipitation_bonus = 12
+        precipitation_bonus += 12
     elif payload.precipitation in {"rain", "sleet"}:
-        precipitation_bonus = 5
+        precipitation_bonus += 6
 
     wind_bonus = 0
     if payload.wind == "strong":
-        wind_bonus = 9
+        wind_bonus += 10
     elif payload.wind == "moderate":
-        wind_bonus = 3
+        wind_bonus += 4
 
+    # -----------------------------
+    # WEATHER (NUMERIC ENHANCEMENT)
+    # -----------------------------
+    # If your feature adapter includes these, this activates automatically
+    if hasattr(features, "wind_mph"):
+        if features.wind_mph > 25:
+            wind_bonus += 6
+        elif features.wind_mph > 15:
+            wind_bonus += 3
+
+    if hasattr(features, "precip_mm"):
+        if features.precip_mm > 5:
+            precipitation_bonus += 6
+        elif features.precip_mm > 2:
+            precipitation_bonus += 3
+
+    # -----------------------------
+    # WEATHER INTERACTION
+    # -----------------------------
     weather_interaction_bonus = 0
-    if payload.precipitation in {"snow", "thunderstorms"} and payload.wind == "strong":
-        weather_interaction_bonus = 10
-        if is_peak_hour(hour):
-            weather_interaction_bonus += 6
-    elif payload.precipitation in {"snow", "thunderstorms"} and is_peak_hour(hour):
-        weather_interaction_bonus = 4
 
+    if (
+        payload.precipitation in {"snow", "thunderstorms"}
+        and payload.wind == "strong"
+    ):
+        weather_interaction_bonus += 10
+
+    if hasattr(features, "wind_mph") and features.wind_mph > 20:
+        weather_interaction_bonus += 4
+
+    if is_peak_hour(hour) and payload.precipitation != "none":
+        weather_interaction_bonus += 4
+
+    # -----------------------------
+    # TOTAL SCORE
+    # -----------------------------
     unclamped_total = (
         base_score
         + route_contribution
@@ -166,16 +199,14 @@ def heuristic_probability(
     )
 
     probability = clamp_probability(unclamped_total)
-    if (
-        payload.precipitation == "none"
-        and payload.wind == "calm"
-        and features.total_delay_norm < 0.55
-    ):
+
+    # Soft ceiling for calm conditions
+    if payload.precipitation == "none" and payload.wind == "calm":
         probability = min(probability, CALM_CONDITIONS_SOFT_CEILING)
 
     return HeuristicEstimate(
         probability=probability,
-        reason="Retuned heuristic estimator with a lower baseline, softer delay scaling, and a calm-conditions ceiling for more realistic delay ranges.",
+        reason="Weather-aware heuristic with numeric and categorical signals integrated.",
         breakdown=HeuristicScoreBreakdown(
             base_score=base_score,
             route_contribution=route_contribution,
@@ -192,35 +223,30 @@ def heuristic_probability(
 
 
 # -----------------------------
-# Hybrid Blending (UPGRADED)
+# Blending (slightly more flexible)
 # -----------------------------
 
 def blend_model_with_heuristic(
     heuristic_probability: int,
     model_probability: int,
 ) -> HybridBlendResult:
-    raw_model_disagreement = model_probability - heuristic_probability
-    disagreement_magnitude = abs(raw_model_disagreement)
 
-    if disagreement_magnitude <= 8:
+    raw_model_disagreement = model_probability - heuristic_probability
+    abs_diff = abs(raw_model_disagreement)
+
+    if abs_diff <= 8:
         max_model_shift = MAX_MODEL_SHIFT
-    elif disagreement_magnitude <= 15:
-        max_model_shift = 3
-    elif disagreement_magnitude <= 25:
-        max_model_shift = 1
+    elif abs_diff <= 15:
+        max_model_shift = 5
     else:
-        max_model_shift = 0
+        max_model_shift = 2
 
     applied_adjustment = max(
         -max_model_shift,
         min(raw_model_disagreement, max_model_shift),
     )
-    probability = clamp_probability(heuristic_probability + applied_adjustment)
 
-    blend_method = "heuristic_led_bounded_adjustment"
-    reasoning = (
-        "Final score stays anchored to the heuristic estimate. The model can only make a small bounded adjustment when its prediction is reasonably close to the heuristic."
-    )
+    probability = clamp_probability(heuristic_probability + applied_adjustment)
 
     return HybridBlendResult(
         probability=probability,
@@ -229,54 +255,6 @@ def blend_model_with_heuristic(
         raw_model_disagreement=raw_model_disagreement,
         max_model_shift=max_model_shift,
         applied_adjustment=applied_adjustment,
-        blend_method=blend_method,
-        reasoning=reasoning,
-    )
-
-
-# -----------------------------
-# Explanation Builder
-# -----------------------------
-
-def build_explanation(
-    payload: NormalizedPredictionInput,
-    probability: int,
-    features: AdaptedFeatures,
-    model_version: str | None,
-    path_used: str,
-) -> str:
-
-    factors: list[str] = []
-
-    if payload.precipitation != "none":
-        factors.append(payload.precipitation.replace("_", " "))
-    if payload.wind != "calm":
-        factors.append(f"{payload.wind} winds")
-    if features.peak_departure_score >= 0.35:
-        factors.append("peak departure traffic")
-    if features.route_congestion_score >= 0.55:
-        factors.append("a busy route")
-
-    if not factors:
-        factors.append("stable operating conditions")
-
-    factor_text = (
-        ", ".join(factors[:-1]) + f" and {factors[-1]}"
-        if len(factors) > 1
-        else factors[0]
-    )
-
-    if path_used == "heuristic_fallback":
-        path_text = "This result was generated using an advanced heuristic estimator."
-    elif path_used == "hybrid_blend":
-        path_text = (
-            "This result uses a heuristic-led hybrid adjustment, where the trained BTS-based model can only make a small bounded change to the heuristic score."
-        )
-    else:
-        path_text = f"This result came from the trained BTS-backed model ({model_version})."
-
-    return (
-        f"This flight is estimated at {probability}% delay risk due to {factor_text}. "
-        f"The system maps traveler inputs into operational aviation signals before scoring. "
-        f"{path_text}"
+        blend_method="heuristic_led_bounded_adjustment",
+        reasoning="Hybrid blend allowing controlled model influence while remaining heuristic-led.",
     )

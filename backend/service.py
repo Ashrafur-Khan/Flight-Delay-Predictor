@@ -29,6 +29,29 @@ from .schemas import (
     PredictionResponse,
 )
 
+from .external_data.weather import get_weather_for_airport
+
+
+# -----------------------------
+# Weather Mappers
+# -----------------------------
+def map_precipitation(mm: float):
+    if mm == 0:
+        return "none"
+    elif mm < 2:
+        return "rain"
+    elif mm < 5:
+        return "sleet"
+    return "thunderstorms"
+
+
+def map_wind(mph: float):
+    if mph < 10:
+        return "calm"
+    elif mph < 20:
+        return "moderate"
+    return "strong"
+
 
 @dataclass
 class PredictionResultBundle:
@@ -41,6 +64,8 @@ class PredictionResultBundle:
     model_artifact: ModelArtifact | None
     heuristic_estimate: HeuristicEstimate
     hybrid_blend: HybridBlendResult | None = None
+    live_weather_used: bool = False
+    live_weather_raw: dict | None = None
 
 
 class PredictionService:
@@ -74,17 +99,62 @@ class PredictionService:
 
     def score(self, payload: PredictionRequest) -> PredictionResultBundle:
         normalized_payload, notes = normalize_request(payload)
+
+        # -----------------------------
+        # LIVE WEATHER
+        # -----------------------------
+        live_weather = get_weather_for_airport(normalized_payload.origin_airport)
+
+        live_weather_used = False
+        live_weather_raw = None
+
+        if live_weather:
+            live_weather_used = True
+
+            current = live_weather.get("current", {})
+
+            temp_f = current.get("temp_f")
+            wind_mph = current.get("wind_mph")
+            precip_mm = current.get("precip_mm")
+
+            live_weather_raw = live_weather
+
+            # ✅ SAFE OVERRIDE (FIXED)
+            if temp_f is not None and wind_mph is not None and precip_mm is not None:
+                data = normalized_payload.model_dump()
+
+                data.update({
+                    "temperature_f": temp_f,
+                    "wind": map_wind(wind_mph),
+                    "precipitation": map_precipitation(precip_mm),
+                })
+
+                normalized_payload = normalized_payload.__class__(**data)
+
+                notes = list(notes)
+                notes.append("Live weather data applied from external API.")
+
+        # -----------------------------
+        # FEATURE ENGINEERING
+        # -----------------------------
         features = adapt_request_to_model_features(normalized_payload)
+
         heuristic_estimate = heuristic_probability(normalized_payload, features)
 
+        # -----------------------------
+        # MODEL PATH
+        # -----------------------------
         if self.artifact is not None:
             model_probability = predict_probability(self.artifact, features)
+
             hybrid_blend = blend_model_with_heuristic(
                 heuristic_probability=heuristic_estimate.probability,
                 model_probability=model_probability,
             )
+
             notes = list(notes)
             notes.append(hybrid_blend.reasoning)
+
             return PredictionResultBundle(
                 probability=clamp_probability(hybrid_blend.probability),
                 path_used="hybrid_blend",
@@ -95,8 +165,13 @@ class PredictionService:
                 model_artifact=self.artifact,
                 heuristic_estimate=heuristic_estimate,
                 hybrid_blend=hybrid_blend,
+                live_weather_used=live_weather_used,
+                live_weather_raw=live_weather_raw,
             )
 
+        # -----------------------------
+        # FALLBACK
+        # -----------------------------
         if not ALLOW_HEURISTIC_FALLBACK:
             raise HTTPException(
                 status_code=503,
@@ -105,6 +180,7 @@ class PredictionService:
 
         notes = list(notes)
         notes.append(heuristic_estimate.reason)
+
         return PredictionResultBundle(
             probability=heuristic_estimate.probability,
             path_used="heuristic_fallback",
@@ -115,10 +191,13 @@ class PredictionService:
             model_artifact=None,
             heuristic_estimate=heuristic_estimate,
             hybrid_blend=None,
+            live_weather_used=live_weather_used,
+            live_weather_raw=live_weather_raw,
         )
 
     def build_response(self, payload: PredictionRequest) -> PredictionResponse:
         bundle = self.score(payload)
+
         explanation = build_explanation(
             payload=bundle.normalized_payload,
             probability=bundle.probability,
@@ -126,6 +205,7 @@ class PredictionService:
             model_version=bundle.model_artifact.model_version if bundle.model_artifact else None,
             path_used=bundle.path_used,
         )
+
         debug = None
         if payload.includeDebug:
             debug = PredictionDebugInfo(
@@ -162,12 +242,16 @@ class PredictionService:
                         maxModelShift=None,
                         appliedAdjustment=None,
                         blendMethod="heuristic_only_fallback",
-                        reasoning="Final score matches the heuristic fallback because no trained model artifact is available.",
+                        reasoning="Final score matches heuristic fallback.",
                     )
                 ),
                 finalProbability=bundle.probability,
                 fallbackReason=bundle.fallback_reason,
                 notes=bundle.notes,
+                liveData={
+                    "weatherUsed": bundle.live_weather_used,
+                    "source": "WeatherAPI",
+                },
             )
 
         return PredictionResponse(
