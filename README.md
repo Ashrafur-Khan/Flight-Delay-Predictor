@@ -396,7 +396,7 @@ This script:
   Small API client wrapper around `fetch`. Builds requests from `VITE_API_BASE_URL`.
 
 - `flight-delay-prediction-form/src/lib/airports.ts`
-  Shared airport list plus helpers for display labels and airport-code normalization.
+  Shared airport list plus helpers for display labels and airport-code normalization. The shipped list is derived from the local BTS airport catalog in `backend/data/Airline_Delay_Cause.csv`, so the UI supports the full set of airports represented in the dataset.
 
 - `flight-delay-prediction-form/src/types/flight.ts`
   Shared frontend request and response types used by the form, API service, itinerary scoring, and debug UI.
