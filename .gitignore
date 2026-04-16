@@ -33,3 +33,4 @@ data-analysis/cleaned_bts_flight_delay_data.metadata.json
 Thumbs.db
 .idea/
 .vscode/
+backend/model.pkl

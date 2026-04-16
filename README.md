@@ -1,10 +1,29 @@
 # Flight Delay Predictor
 
-This repository contains a small end-to-end flight delay prediction app built from three connected parts:
+This repository contains a small end-to-end flight delay prediction app built from four connected parts:
 
 - a React + Vite frontend for collecting flight details from a user
 - a FastAPI backend that accepts those inputs and returns a delay-risk prediction
 - a BTS-based data cleaning and model training workflow used to produce the backend model artifact
+- an Electron desktop wrapper that packages the built frontend plus a local FastAPI backend into one installable app
+
+## Project Status
+
+Current repo status:
+
+- The web app and local full-stack workflow are functional.
+- The client-side grounded result assistant is the default shipped explanation path.
+- The Electron desktop packaging scaffold is implemented and verified locally.
+- The repo can build a current-platform desktop installer with `npm run build:desktop`.
+- Release-mode UI now hides `Debug Details`, `Grounded Fields`, and explicit backend/fallback labels from packaged end users.
+
+Current desktop release status:
+
+- Local desktop packaging works from the repo.
+- A macOS arm64 `.dmg` has been built locally in `desktop/dist/installers/`.
+- Cross-platform packaging is configured for macOS, Windows, and Linux, but each installer still needs to be built on its target OS or in CI.
+- Tag-driven GitHub Releases automation now exists for bundled-model macOS and Windows installers on self-hosted runners.
+- The app is not yet fully release-hardened for public download: custom icons, signed installers, and macOS notarization are still pending.
 
 ## Project Overview
 
@@ -101,8 +120,15 @@ Those files are intentionally gitignored because they are generated from local t
 
 ```text
 Flight-Delay-Predictor/
+├── desktop/
+│   ├── electron-builder.yml
+│   ├── main.js
+│   ├── preload.js
+│   ├── pyinstaller/
+│   └── scripts/
 ├── backend/
 │   ├── config.py
+│   ├── desktop_entry.py
 │   ├── feature_adapter.py
 │   ├── main.py
 │   ├── model_service.py
@@ -121,12 +147,15 @@ Flight-Delay-Predictor/
 ├── tests/
 │   ├── test_adapter.py
 │   ├── test_api.py
+│   ├── test_desktop_entry.py
 │   └── test_data_pipeline.py
 ├── flight-delay-prediction-form/
 │   ├── src/
 │   ├── .env.example
 │   ├── package.json
 │   └── vite.config.ts
+├── package.json
+├── package-lock.json
 ├── requirements.txt
 └── README.md
 ```
@@ -145,6 +174,12 @@ Flight-Delay-Predictor/
 - `tests/`
   Backend coverage for the adapter, the dataset pipeline, and the FastAPI surface.
 
+- `desktop/`
+  Electron desktop wrapper, backend freezing config, smoke-test scripts, and installer packaging configuration.
+
+- repo-root `package.json`
+  Desktop release orchestration entrypoint for Electron packaging commands such as `build:desktop`, `build:backend:desktop`, and `start:desktop`.
+
 ## Dev Notes
 
 ### Prerequisites
@@ -159,6 +194,7 @@ Flight-Delay-Predictor/
 - Python 3.10+
 - `venv`
 - `pip`
+- pinned backend runtime dependencies from `requirements.txt` are required for desktop packaging compatibility
 
 ## Setup
 
@@ -170,6 +206,7 @@ From the repo root:
 python3 -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
+npm install
 ```
 
 ### 2. Generate the dataset and model artifact
@@ -248,12 +285,21 @@ Desktop packaging expectations:
 - desktop releases require a compatible trained `backend/model.pkl`
 - the packaged app starts and stops the backend automatically on `127.0.0.1`
 - desktop runtime does not use the frontend mock fallback when the packaged backend is unavailable
+- desktop runtime uses the trimmed release UI by default, so raw grounded citation output such as `Grounded Fields` is hidden from end users
 
 Additional desktop prerequisites:
 
 - install root Electron packaging dependencies with `npm install` from the repo root
-- ensure your Python environment includes the pinned backend dependencies and `pyinstaller` from `requirements.txt`
+- ensure your Python environment includes the pinned backend dependencies from `requirements.txt`
 - if desktop validation reports a model/version mismatch, reinstall `requirements.txt` or retrain `backend/model.pkl` before packaging
+
+Launch the Electron app directly from the repo root:
+
+```bash
+npm run start:desktop
+```
+
+This starts the Electron shell against the current repo checkout. In development, it launches the backend from the repo's Python environment and loads the built frontend bundle from `flight-delay-prediction-form/build`.
 
 Build a current-platform installer from the repo root:
 
@@ -275,6 +321,26 @@ Generated installers are written to:
 desktop/dist/installers/
 ```
 
+Desktop verification commands:
+
+```bash
+npm run validate:desktop-backend
+npm run test:desktop:backend-smoke
+```
+
+Release maintainers should also verify the packaged installer on a clean machine before sharing the GitHub Release link:
+
+- install the app without Python present
+- confirm the app starts without requiring dataset generation or model training
+- confirm predictions work through the bundled backend
+- confirm packaged desktop runtime does not silently fall back to `mock_fallback`
+
+Current local packaging status:
+
+- verified on macOS arm64
+- local `.dmg` output is present in `desktop/dist/installers/`
+- packaging currently uses ad-hoc signing and does not perform notarization
+
 Cross-platform note:
 
 - Run `npm run build:desktop` on each target OS, locally or in CI.
@@ -282,6 +348,53 @@ Cross-platform note:
   - macOS `.dmg`
   - Windows NSIS `.exe`
   - Linux `AppImage`
+
+### GitHub Releases desktop distribution
+
+The repository now includes a tag-driven GitHub Actions workflow at `.github/workflows/release-desktop.yml` for public desktop downloads.
+
+Release workflow expectations:
+
+- end users download installers from GitHub Releases and do not need Python, the BTS dataset, or a local training step
+- the release workflow does not train a model in CI
+- each self-hosted release runner must already have access to an approved trained model artifact outside the repository
+- the runner must expose that artifact through an absolute environment variable path:
+
+```bash
+FLIGHT_DELAY_RELEASE_MODEL_PATH=/absolute/path/to/vetted/backend-model.pkl
+```
+
+- the workflow stages that file into `backend/model.pkl` before desktop validation, backend freezing, smoke testing, and Electron packaging
+- if the staged model is missing, incompatible, or loads with dependency-version mismatch warnings, the release build fails
+
+Required release runners:
+
+- one self-hosted macOS runner with the `self-hosted` and `macOS` labels
+- one self-hosted Windows runner with the `self-hosted` and `Windows` labels
+
+Release trigger and versioning rules:
+
+- the workflow triggers on tags that match `v*`
+- the tag must match the repo-root `package.json` version exactly
+- example: if `package.json` is `0.3.0`, create tag `v0.3.0`
+
+From the repo root, a typical release flow is:
+
+```bash
+npm version 0.3.0 --no-git-tag-version
+git add package.json package-lock.json
+git commit -m "Release v0.3.0"
+git tag v0.3.0
+git push origin main --tags
+```
+
+Expected GitHub Release assets for v1:
+
+- one macOS installer named like `flight-delay-predictor-0.3.0-mac-arm64.dmg`
+- one Windows installer named like `flight-delay-predictor-0.3.0-win-x64.exe`
+- one `.sha256` checksum file for each installer
+
+The workflow intentionally does not publish `latest-mac.yml`, blockmaps, or other auto-update metadata because the app is not shipping auto-update behavior yet.
 
 The frontend also supports a release-UI toggle:
 
@@ -336,6 +449,14 @@ The local app endpoints are:
 - frontend: <http://localhost:3000>
 - backend: <http://localhost:8000>
 - backend health endpoint: <http://localhost:8000/>
+
+For a desktop smoke test from the repo root:
+
+```bash
+npm run start:desktop
+```
+
+That path should launch one desktop window, start the backend automatically, and avoid the frontend `mock_fallback` path unless you are explicitly running the browser app instead of the packaged desktop runtime.
 
 ### What to expect after setup
 
@@ -433,6 +554,26 @@ This script:
 
 ## Key files
 
+### Desktop packaging
+
+- `package.json`
+  Repo-root Electron packaging manifest and desktop build entrypoint.
+
+- `desktop/main.js`
+  Electron main process. Starts and monitors the bundled backend, waits for backend health, injects runtime API config into the renderer, and stops the backend when the app exits.
+
+- `desktop/preload.js`
+  Exposes the read-only desktop runtime contract to the renderer.
+
+- `desktop/electron-builder.yml`
+  Installer packaging configuration for macOS, Windows, and Linux targets.
+
+- `desktop/pyinstaller/backend.spec`
+  PyInstaller spec used to freeze the FastAPI backend for the desktop app.
+
+- `desktop/scripts/build-desktop.mjs`
+  Repo-native release pipeline for frontend build, backend freeze, smoke test, and Electron packaging.
+
 ### Frontend
 
 - `flight-delay-prediction-form/src/components/FlightDelayPredictor.tsx`
@@ -448,7 +589,10 @@ This script:
   Client-side grounded result assistant. Generates deterministic answers from structured prediction context and can optionally use a small local browser model to polish the answer when explicitly enabled.
 
 - `flight-delay-prediction-form/src/lib/api.ts`
-  Small API client wrapper around `fetch`. Builds requests from `VITE_API_BASE_URL`.
+  Small API client wrapper around `fetch`. Builds requests from either `VITE_API_BASE_URL` or the runtime API base URL injected by Electron.
+
+- `flight-delay-prediction-form/src/lib/runtime.ts`
+  Runtime-detection helpers for distinguishing desktop vs web execution and reading Electron-provided API configuration.
 
 - `flight-delay-prediction-form/src/lib/airports.ts`
   Shared airport list plus helpers for display labels and airport-code normalization. The shipped list is derived from the local BTS airport catalog in `backend/data/Airline_Delay_Cause.csv`, so the UI supports the full set of airports represented in the dataset.
@@ -463,7 +607,7 @@ This script:
   Prediction result UI. Shows the main result, the grounded follow-up assistant, the connected-itinerary breakdown, and a dev-only debug panel when debug payloads are present.
 
 - `flight-delay-prediction-form/src/components/ResultAssistant.tsx`
-  Grounded result-chat UI. Lets the user ask follow-up questions about the current result without changing the underlying score.
+  Grounded result-chat UI. Lets the user ask follow-up questions about the current result without changing the underlying score. In release mode it hides raw grounded citation output such as `Grounded Fields`.
 
 - `flight-delay-prediction-form/vite.config.ts`
   Vite config, including the dev server port (`3000`).
@@ -472,6 +616,9 @@ This script:
 
 - `backend/main.py`
   FastAPI app entry point. Wires up CORS, the health endpoint, the `/predict` endpoint, and the `/explain` endpoint.
+
+- `backend/desktop_entry.py`
+  Desktop-only backend launcher used by Electron and PyInstaller. Starts the packaged FastAPI service on a caller-provided localhost port.
 
 - `backend/service.py`
   Orchestrates request normalization, feature adaptation, trained-model inference, local heuristic fallback, and debug response assembly.
@@ -501,6 +648,7 @@ This script:
 - The grounded explanation layer is scoped to explaining the current result. It is not a general travel-planning copilot and it does not fetch live travel or weather data.
 - Connected-flight scoring is frontend-only and heuristic. Layovers are not sent to the backend model, and the itinerary score is not a learned multi-leg prediction.
 - The frontend fallback can make the UI appear functional even when the backend is unavailable, so testing should include checking backend logs, the backend health endpoint, or the dev-only debug panel.
+- The desktop app is verified locally but is not yet polished for public distribution. It still needs custom icons, release automation, and production signing/notarization.
 
 ## Current request/response contract
 

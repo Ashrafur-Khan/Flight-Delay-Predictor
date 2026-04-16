@@ -1,5 +1,6 @@
 appId: com.flightdelaypredictor.desktop
 productName: Flight Delay Predictor
+artifactName: ${name}-${version}-${os}-${arch}.${ext}
 directories:
   output: desktop/dist/installers
 files:

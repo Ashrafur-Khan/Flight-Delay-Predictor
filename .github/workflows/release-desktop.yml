@@ -1,0 +1,132 @@
+name: Release Desktop
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-desktop-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  validate_version:
+    name: Validate release version
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Verify tag matches package version
+        id: version
+        shell: bash
+        run: |
+          VERSION="$(node -p "require('./package.json').version")"
+          TAG_VERSION="${GITHUB_REF_NAME#v}"
+
+          if [ "$VERSION" != "$TAG_VERSION" ]; then
+            echo "Release tag ${GITHUB_REF_NAME} does not match package.json version ${VERSION}." >&2
+            exit 1
+          fi
+
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+
+  build_installers:
+    name: Build ${{ matrix.platform_name }} installer
+    needs: validate_version
+    runs-on: ${{ fromJson(matrix.runner_labels) }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform_name: macOS
+            platform_id: macos
+            runner_labels: '["self-hosted","macOS"]'
+            installer_extension: .dmg
+          - platform_name: Windows
+            platform_id: windows
+            runner_labels: '["self-hosted","Windows"]'
+            installer_extension: .exe
+    env:
+      CSC_IDENTITY_AUTO_DISCOVERY: "false"
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Verify release model path is configured on the runner
+        run: |
+          node -e "const fs = require('fs'); const path = require('path'); const modelPath = process.env.FLIGHT_DELAY_RELEASE_MODEL_PATH; if (!modelPath) { console.error('FLIGHT_DELAY_RELEASE_MODEL_PATH is not set on this runner.'); process.exit(1); } if (!path.isAbsolute(modelPath)) { console.error('FLIGHT_DELAY_RELEASE_MODEL_PATH must be an absolute path.'); process.exit(1); } if (!fs.existsSync(modelPath)) { console.error('Configured release model does not exist: ' + modelPath); process.exit(1); }"
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: |
+            package-lock.json
+            flight-delay-prediction-form/package-lock.json
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install root desktop dependencies
+        run: npm ci
+
+      - name: Install frontend dependencies
+        run: npm --prefix flight-delay-prediction-form ci
+
+      - name: Install Python dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements.txt
+
+      - name: Build desktop installer
+        run: npm run build:desktop
+
+      - name: Prepare release assets
+        id: assets
+        run: node desktop/scripts/prepare-release-assets.mjs --extension=${{ matrix.installer_extension }}
+
+      - name: Upload installer and checksum
+        uses: actions/upload-artifact@v4
+        with:
+          name: desktop-release-${{ matrix.platform_id }}
+          if-no-files-found: error
+          path: |
+            ${{ steps.assets.outputs.installer_path }}
+            ${{ steps.assets.outputs.checksum_path }}
+
+  publish_release:
+    name: Publish GitHub Release
+    needs:
+      - validate_version
+      - build_installers
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download release assets
+        uses: actions/download-artifact@v4
+        with:
+          pattern: desktop-release-*
+          merge-multiple: true
+          path: release-assets
+
+      - name: Publish release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_name }}
+          fail_on_unmatched_files: true
+          generate_release_notes: true
+          files: |
+            release-assets/*

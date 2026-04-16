@@ -31,6 +31,7 @@ function run(command, args, options = {}) {
 }
 
 run(process.execPath, ['desktop/scripts/clean.mjs']);
+run(process.execPath, ['desktop/scripts/stage-release-model.mjs']);
 run(pythonCommand, ['desktop/scripts/validate_backend_release.py']);
 run(npmCommand, ['--prefix', 'flight-delay-prediction-form', 'run', 'build']);
 run(pythonCommand, ['-m', 'PyInstaller', '--noconfirm', '--clean', '--distpath', 'desktop/dist/backend', 'desktop/pyinstaller/backend.spec']);
