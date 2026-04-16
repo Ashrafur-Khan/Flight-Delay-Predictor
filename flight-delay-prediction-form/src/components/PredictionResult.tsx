@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { AlertCircle, AlertTriangle, CheckCircle, ChevronDown, ChevronUp } from 'lucide-react';
+import { isReleaseUi } from '@/lib/releaseMode';
 import type { PredictionResponse, RiskLevel } from '@/types';
 import { ResultAssistant } from './ResultAssistant';
 
@@ -90,10 +91,13 @@ export function PredictionResult({ prediction, isLoading, hasSubmitted }: Predic
     }
   };
 
-  const sourceLabel = prediction.source === 'mock_fallback' ? 'Frontend mock fallback' : 'Backend API';
-  const sourceBadgeClass = prediction.source === 'mock_fallback'
-    ? 'bg-red-100 text-red-700 border-red-200'
-    : 'bg-blue-100 text-blue-700 border-blue-200';
+  const itinerarySummary = prediction.itinerarySummary;
+  const hasConnectedItinerary = Boolean(itinerarySummary && itinerarySummary.legs.length > 0);
+  const showReducedConfidenceNotice = isReleaseUi && (
+    prediction.source === 'mock_fallback'
+    || prediction.debug?.pathUsed === 'heuristic_fallback'
+    || prediction.debug?.pathUsed === 'hybrid_blend'
+  );
   const submittedRequest = prediction.submittedRequest
     ? {
         departureDate: prediction.submittedRequest.departureDate,
@@ -105,8 +109,6 @@ export function PredictionResult({ prediction, isLoading, hasSubmitted }: Predic
         wind: prediction.submittedRequest.wind,
       }
     : null;
-  const itinerarySummary = prediction.itinerarySummary;
-  const hasConnectedItinerary = Boolean(itinerarySummary && itinerarySummary.legs.length > 0);
 
   return (
     <div className={`bg-white rounded-lg shadow-md p-8 border-2 ${getBorderColorClass()}`}>
@@ -130,6 +132,12 @@ export function PredictionResult({ prediction, isLoading, hasSubmitted }: Predic
           {prediction.explanation}
         </p>
       </div>
+
+      {showReducedConfidenceNotice && (
+        <p className="mt-4 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+          This estimate may be less precise than usual.
+        </p>
+      )}
 
       <ResultAssistant prediction={prediction} />
 
@@ -171,7 +179,7 @@ export function PredictionResult({ prediction, isLoading, hasSubmitted }: Predic
         </div>
       )}
 
-      {isDev && (
+      {!isReleaseUi && isDev && (
         <div className="mt-6 rounded-lg border border-slate-200 bg-slate-50">
           <button
             type="button"
@@ -187,16 +195,6 @@ export function PredictionResult({ prediction, isLoading, hasSubmitted }: Predic
 
           {showDebug && (
             <div className="border-t border-slate-200 px-4 py-4 space-y-4 text-sm text-slate-700">
-              <div className={`inline-flex rounded-full border px-3 py-1 text-xs font-medium ${sourceBadgeClass}`}>
-                Source: {sourceLabel}
-              </div>
-
-              {prediction.source === 'mock_fallback' && (
-                <p className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-red-700">
-                  The backend response was not used for this result. This prediction came from the frontend fallback.
-                </p>
-              )}
-
               <DebugBlock title="Submitted Request" value={submittedRequest} />
 
               {prediction.debug ? (

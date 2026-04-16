@@ -65,7 +65,9 @@ There is also a development-only debugging path:
 
 - In Vite development mode, the frontend asks the backend for extra scoring diagnostics.
 - When the backend receives `includeDebug: true`, it returns normalized input values, derived BTS-style features, model and dataset metadata, scoring path metadata, fallback reasons when relevant, and notes about thresholds or defaulted values.
-- The frontend shows those details in a collapsible `Debug Details` panel so it is easier to tell whether the result came from the backend or the frontend fallback.
+- Production builds use a trimmed release UI by default.
+- In the release UI, the frontend hides `Debug Details`, grounded-field lists, and explicit backend/fallback labels from end users.
+- If you set `VITE_RELEASE_UI=false`, the frontend shows a collapsible `Debug Details` panel so local development can still inspect the exact scoring path used for a result.
 - When layovers are present, the debug panel also shows the displayed itinerary score alongside the raw backend or direct-route score.
 
 There is also a grounded explanation path:
@@ -237,6 +239,14 @@ The result assistant works without extra setup. Its default path is a determinis
 
 The frontend also supports an optional on-device LLM enhancement for the result assistant. This is disabled by default and only affects the assistant phrasing layer. It does not change scoring, probabilities, risk labels, or citations.
 
+The frontend also supports a release-UI toggle:
+
+```bash
+VITE_RELEASE_UI=true
+```
+
+Production builds enable the trimmed release UI by default. Set `VITE_RELEASE_UI=false` in local development if you want to keep the developer-facing diagnostics visible.
+
 To enable the optional client-side LLM layer in the frontend:
 
 ```bash
@@ -311,8 +321,9 @@ For a normal local smoke test:
 9. If layovers were added, confirm the UI also shows an `Itinerary Breakdown` section with one entry per leg.
 10. Ask a follow-up question in `Ask About This Result` and confirm the answer stays consistent with the displayed score and explanation.
 11. If `VITE_ENABLE_LOCAL_RESULT_ASSISTANT_MODEL=true` is enabled, confirm the assistant still returns grounded answers and falls back cleanly to the deterministic client-side explainer when the local model cannot activate.
+12. In release UI mode, confirm the app does not render `Debug Details`, `Grounded Fields`, or explicit backend/fallback labels.
 
-In Vite dev mode, you can also expand `Debug Details` in the result panel to inspect:
+If `VITE_RELEASE_UI=false` in local development, you can also expand `Debug Details` in the result panel to inspect:
 
 - whether the result came from the backend or the frontend mock fallback
 - whether the backend model was loaded
@@ -326,7 +337,7 @@ The grounded assistant should follow the same source-of-truth rules:
 
 - it must not change the displayed probability or risk label
 - it should explain the displayed itinerary result separately from the raw direct-route result when layovers are present
-- it should distinguish frontend mock fallback, backend heuristic fallback, and backend hybrid-blend paths when that information is available
+- it should stay grounded to the current result context even when the release UI hides technical citations and disclaimers
 
 ### How to tell which prediction path is being used
 
@@ -334,7 +345,7 @@ The grounded assistant should follow the same source-of-truth rules:
 - If `http://localhost:8000/` reports `"modelLoaded": true`, the backend found `backend/model.pkl`.
 - If the backend is stopped and the frontend still shows a prediction, that result is coming from the frontend mock fallback.
 - If layovers are present, the top-level displayed score is the frontend itinerary score rather than the raw backend direct-route score.
-- In frontend dev mode, the `Debug Details` panel labels the response source as either `Backend API` or `Frontend mock fallback`.
+- If `VITE_RELEASE_UI=false`, the frontend `Debug Details` panel exposes the response source and debug metadata directly.
 
 ## Data and model workflow
 
@@ -619,13 +630,14 @@ The backend returns:
   "suggestedFollowups": [
     "Which factors mattered most here?",
     "Summarize this result in plain language.",
-    "Explain the itinerary impact.",
-    "What does hybrid blend mean here?"
+    "Explain the itinerary impact."
   ]
 }
 ```
 
 `disclaimer` is optional and appears when the result source or scoring path requires extra guardrails, such as frontend mock fallback or heuristic fallback.
+
+The frontend keeps these fields in its internal assistant pipeline for grounding, but the trimmed release UI does not display the raw `disclaimer` or `citations` values to the user.
 
 ### Frontend-augmented response shape for connected itineraries
 
