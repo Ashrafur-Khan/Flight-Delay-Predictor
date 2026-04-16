@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import type { PredictionResponse, ResultAssistantMessage, ResultChatResponse } from '@/types';
+import { isReleaseUi } from '@/lib/releaseMode';
 import {
   buildPredictionExplanationContext,
   getAssistantContextNotice,
@@ -163,7 +164,7 @@ export function ResultAssistant({ prediction }: ResultAssistantProps) {
           </p>
         )}
 
-        {latestResponse?.citations?.length ? (
+        {!isReleaseUi && latestResponse?.citations?.length ? (
           <div className="rounded-md border border-slate-200 bg-white px-3 py-3">
             <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Grounded Fields</p>
             <p className="mt-2 text-xs text-slate-600">{latestResponse.citations.join(', ')}</p>

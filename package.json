@@ -1,0 +1,19 @@
+{
+  "name": "flight-delay-predictor",
+  "version": "0.2.0",
+  "private": true,
+  "description": "Desktop packaging scaffold for the Flight Delay Predictor app.",
+  "main": "desktop/main.js",
+  "scripts": {
+    "build:desktop": "node desktop/scripts/build-desktop.mjs",
+    "build:frontend:desktop": "npm --prefix flight-delay-prediction-form run build",
+    "build:backend:desktop": "node desktop/scripts/run-python.mjs -m PyInstaller --noconfirm --clean --distpath desktop/dist/backend desktop/pyinstaller/backend.spec",
+    "validate:desktop-backend": "node desktop/scripts/run-python.mjs desktop/scripts/validate_backend_release.py",
+    "test:desktop:backend-smoke": "node desktop/scripts/run-python.mjs desktop/scripts/smoke_test_backend.py",
+    "start:desktop": "electron ."
+  },
+  "devDependencies": {
+    "electron": "^35.1.4",
+    "electron-builder": "^26.0.12"
+  }
+}

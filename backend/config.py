@@ -1,11 +1,26 @@
 from __future__ import annotations
 
 import os
+import sys
 from pathlib import Path
 
 
-BACKEND_DIR = Path(__file__).resolve().parent
-REPO_ROOT = BACKEND_DIR.parent
+DESKTOP_APP_ORIGIN = "app://-"
+
+
+def _resolve_runtime_paths() -> tuple[Path, Path]:
+    if getattr(sys, "frozen", False):
+        bundle_root = Path(getattr(sys, "_MEIPASS", Path(sys.executable).resolve().parent))
+        bundled_backend_dir = bundle_root / "backend"
+        if bundled_backend_dir.exists():
+            return bundle_root, bundled_backend_dir
+        return bundle_root, bundle_root
+
+    backend_dir = Path(__file__).resolve().parent
+    return backend_dir.parent, backend_dir
+
+
+REPO_ROOT, BACKEND_DIR = _resolve_runtime_paths()
 DATA_ANALYSIS_DIR = REPO_ROOT / "data-analysis"
 MODEL_ARTIFACT_PATH = BACKEND_DIR / "model.pkl"
 DEFAULT_ALLOWED_ORIGINS = [
@@ -13,6 +28,7 @@ DEFAULT_ALLOWED_ORIGINS = [
     "http://127.0.0.1:3000",
     "http://localhost:5173",
     "http://127.0.0.1:5173",
+    DESKTOP_APP_ORIGIN,
 ]
 RUNTIME_ENV = os.getenv("FLIGHT_DELAY_ENV", "development").strip().lower() or "development"
 ALLOW_HEURISTIC_FALLBACK = os.getenv("FLIGHT_DELAY_ALLOW_HEURISTIC_FALLBACK", "").strip().lower() in {

@@ -1,7 +1,4 @@
-const normalizeBaseUrl = (value?: string) => {
-  if (!value) return undefined;
-  return value.endsWith('/') ? value.slice(0, -1) : value;
-};
+import { getRuntimeConfig } from '@/lib/runtime';
 
 export interface ApiClient {
   baseUrl?: string;
@@ -13,10 +10,11 @@ export interface ApiClientOptions {
 }
 
 export const createApiClient = (options: ApiClientOptions = {}): ApiClient => {
-  const inferredBaseUrl = options.baseUrl ?? import.meta.env.VITE_API_BASE_URL;
-  const baseUrl = normalizeBaseUrl(inferredBaseUrl);
+  const resolveBaseUrl = () => options.baseUrl ?? getRuntimeConfig().apiBaseUrl;
 
   const buildUrl = (path: string) => {
+    const baseUrl = resolveBaseUrl();
+
     if (!baseUrl) {
       throw new Error('API base URL is not configured.');
     }
@@ -45,7 +43,9 @@ export const createApiClient = (options: ApiClientOptions = {}): ApiClient => {
   };
 
   return {
-    baseUrl,
+    get baseUrl() {
+      return resolveBaseUrl();
+    },
     post: (path, payload, init) => request('POST', path, payload, init),
   };
 };

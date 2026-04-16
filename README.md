@@ -239,6 +239,50 @@ The result assistant works without extra setup. Its default path is a determinis
 
 The frontend also supports an optional on-device LLM enhancement for the result assistant. This is disabled by default and only affects the assistant phrasing layer. It does not change scoring, probabilities, risk labels, or citations.
 
+## Desktop Packaging
+
+The repository now includes an Electron desktop packaging scaffold that bundles the built frontend and a local FastAPI backend executable into one installable app.
+
+Desktop packaging expectations:
+
+- desktop releases require a compatible trained `backend/model.pkl`
+- the packaged app starts and stops the backend automatically on `127.0.0.1`
+- desktop runtime does not use the frontend mock fallback when the packaged backend is unavailable
+
+Additional desktop prerequisites:
+
+- install root Electron packaging dependencies with `npm install` from the repo root
+- ensure your Python environment includes the pinned backend dependencies and `pyinstaller` from `requirements.txt`
+- if desktop validation reports a model/version mismatch, reinstall `requirements.txt` or retrain `backend/model.pkl` before packaging
+
+Build a current-platform installer from the repo root:
+
+```bash
+npm run build:desktop
+```
+
+What this release command does:
+
+1. Validates that `backend/model.pkl` exists and loads successfully.
+2. Builds the Vite frontend.
+3. Freezes the backend into a local executable with PyInstaller.
+4. Smoke-tests the frozen backend on a localhost port.
+5. Packages the Electron app for the current platform.
+
+Generated installers are written to:
+
+```text
+desktop/dist/installers/
+```
+
+Cross-platform note:
+
+- Run `npm run build:desktop` on each target OS, locally or in CI.
+- The scaffold is configured for:
+  - macOS `.dmg`
+  - Windows NSIS `.exe`
+  - Linux `AppImage`
+
 The frontend also supports a release-UI toggle:
 
 ```bash

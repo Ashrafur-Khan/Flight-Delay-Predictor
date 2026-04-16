@@ -1,0 +1,22 @@
+appId: com.flightdelaypredictor.desktop
+productName: Flight Delay Predictor
+directories:
+  output: desktop/dist/installers
+files:
+  - package.json
+  - desktop/**/*.js
+  - flight-delay-prediction-form/build/**/*
+extraResources:
+  - from: desktop/dist/backend/server
+    to: backend
+    filter:
+      - '**/*'
+mac:
+  target:
+    - dmg
+win:
+  target:
+    - nsis
+linux:
+  target:
+    - AppImage
