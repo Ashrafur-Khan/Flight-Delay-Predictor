@@ -1,8 +1,14 @@
 from __future__ import annotations
 
+import os
+import tempfile
 import unittest
+from pathlib import Path
 
-from backend.main import explain_result, home, predict
+from fastapi import HTTPException
+
+from backend.main import explain_result, home, portable_app_asset, portable_app_index, predict
+from backend.config import PORTABLE_FRONTEND_BUILD_DIR_ENV_VAR
 from backend.schemas import (
     PredictionDebugBlendInfo,
     PredictionDebugDerivedFeatures,
@@ -182,6 +188,42 @@ class ApiTests(unittest.TestCase):
     def test_explain_result_rejects_missing_context(self) -> None:
         with self.assertRaises(Exception):
             ResultChatRequest(question="Why?", predictionContext=None)  # type: ignore[arg-type]
+
+class PortableFrontendRouteTests(unittest.TestCase):
+    def setUp(self) -> None:
+        self.original_frontend_dir = os.environ.get(PORTABLE_FRONTEND_BUILD_DIR_ENV_VAR)
+
+    def tearDown(self) -> None:
+        if self.original_frontend_dir is None:
+            os.environ.pop(PORTABLE_FRONTEND_BUILD_DIR_ENV_VAR, None)
+        else:
+            os.environ[PORTABLE_FRONTEND_BUILD_DIR_ENV_VAR] = self.original_frontend_dir
+
+    def test_app_route_serves_index_and_spa_fallback(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            frontend_dir = Path(temp_dir)
+            (frontend_dir / "assets").mkdir(parents=True)
+            (frontend_dir / "index.html").write_text("<html><body>portable app</body></html>", encoding="utf-8")
+            (frontend_dir / "assets" / "app.js").write_text("console.log('portable');", encoding="utf-8")
+            os.environ[PORTABLE_FRONTEND_BUILD_DIR_ENV_VAR] = str(frontend_dir)
+
+            index_response = portable_app_index()
+            asset_response = portable_app_asset("assets/app.js")
+            spa_response = portable_app_asset("routes/windows")
+
+            resolved_frontend_dir = frontend_dir.resolve()
+            self.assertEqual(Path(index_response.path), resolved_frontend_dir / "index.html")
+            self.assertEqual(Path(asset_response.path), resolved_frontend_dir / "assets" / "app.js")
+            self.assertEqual(Path(spa_response.path), resolved_frontend_dir / "index.html")
+
+    def test_app_route_returns_404_without_bundle(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            os.environ[PORTABLE_FRONTEND_BUILD_DIR_ENV_VAR] = str(Path(temp_dir) / "missing-build")
+
+            with self.assertRaises(HTTPException) as context:
+                portable_app_index()
+
+            self.assertEqual(context.exception.status_code, 404)
 
 
 if __name__ == "__main__":

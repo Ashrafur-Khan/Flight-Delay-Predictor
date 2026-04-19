@@ -13,17 +13,18 @@ Current repo status:
 
 - The web app and local full-stack workflow are functional.
 - The client-side grounded result assistant is the default shipped explanation path.
-- The Electron desktop packaging scaffold is implemented and verified locally.
-- The repo can build a current-platform desktop installer with `npm run build:desktop`.
+- The Electron desktop packaging flow is implemented and verified locally.
+- The repo can build a current-platform desktop installer with `npm run build:desktop`, and that command was re-verified locally for the current `0.2.0` macOS arm64 build.
 - Release-mode UI now hides `Debug Details`, `Grounded Fields`, and explicit backend/fallback labels from packaged end users.
 
 Current desktop release status:
 
 - Local desktop packaging works from the repo.
-- A macOS arm64 `.dmg` has been built locally in `desktop/dist/installers/`.
+- A macOS arm64 `.dmg` is currently available in `desktop/dist/installers/` as `flight-delay-predictor-0.2.0-mac-arm64.dmg`.
 - Cross-platform packaging is configured for macOS, Windows, and Linux, but each installer still needs to be built on its target OS or in CI.
-- Tag-driven GitHub Releases automation now exists for bundled-model macOS and Windows installers on self-hosted runners.
-- The app is not yet fully release-hardened for public download: custom icons, signed installers, and macOS notarization are still pending.
+- There is no active release automation for macOS or Windows at the moment; desktop releases are still a manual process.
+- There is no Windows release currently available.
+- The app is not yet fully release-hardened for public download: custom icons, production signing, and macOS notarization are still pending.
 
 ## Project Overview
 
@@ -154,6 +155,10 @@ Flight-Delay-Predictor/
 │   ├── .env.example
 │   ├── package.json
 │   └── vite.config.ts
+├── portable/
+│   └── windows/
+├── scripts/
+│   └── build-portable-release.mjs
 ├── package.json
 ├── package-lock.json
 ├── requirements.txt
@@ -177,8 +182,14 @@ Flight-Delay-Predictor/
 - `desktop/`
   Electron desktop wrapper, backend freezing config, smoke-test scripts, and installer packaging configuration.
 
+- `portable/`
+  Windows portable ZIP templates, including PowerShell launch scripts, wrapper commands, and the portable release manifest template.
+
+- `scripts/`
+  Manual release packaging utilities, including the Windows portable ZIP assembler.
+
 - repo-root `package.json`
-  Desktop release orchestration entrypoint for Electron packaging commands such as `build:desktop`, `build:backend:desktop`, and `start:desktop`.
+  Release orchestration entrypoint for Electron packaging commands plus the manual Windows portable ZIP builder.
 
 ## Dev Notes
 
@@ -307,7 +318,7 @@ Build a current-platform installer from the repo root:
 npm run build:desktop
 ```
 
-What this release command does:
+What this build command does:
 
 1. Validates that `backend/model.pkl` exists and loads successfully.
 2. Builds the Vite frontend.
@@ -328,7 +339,7 @@ npm run validate:desktop-backend
 npm run test:desktop:backend-smoke
 ```
 
-Release maintainers should also verify the packaged installer on a clean machine before sharing the GitHub Release link:
+Before sharing a packaged installer, verify it on a clean machine:
 
 - install the app without Python present
 - confirm the app starts without requiring dataset generation or model training
@@ -338,7 +349,8 @@ Release maintainers should also verify the packaged installer on a clean machine
 Current local packaging status:
 
 - verified on macOS arm64
-- local `.dmg` output is present in `desktop/dist/installers/`
+- local `.dmg` output is present in `desktop/dist/installers/` as `flight-delay-predictor-0.2.0-mac-arm64.dmg`
+- no Windows installer has been produced yet
 - packaging currently uses ad-hoc signing and does not perform notarization
 
 Cross-platform note:
@@ -348,53 +360,46 @@ Cross-platform note:
   - macOS `.dmg`
   - Windows NSIS `.exe`
   - Linux `AppImage`
+- The Windows Electron installer path is still deferred until a Windows builder is available.
 
-### GitHub Releases desktop distribution
+## Windows Portable ZIP
 
-The repository now includes a tag-driven GitHub Actions workflow at `.github/workflows/release-desktop.yml` for public desktop downloads.
+The current supported Windows distribution path is a portable ZIP rather than a packaged Electron installer.
 
-Release workflow expectations:
+Portable Windows expectations:
 
-- end users download installers from GitHub Releases and do not need Python, the BTS dataset, or a local training step
-- the release workflow does not train a model in CI
-- each self-hosted release runner must already have access to an approved trained model artifact outside the repository
-- the runner must expose that artifact through an absolute environment variable path:
+- the ZIP bundles the prebuilt frontend and serves it from FastAPI at `http://127.0.0.1:8000/app/`
+- the ZIP does not include `backend/model.pkl`
+- `setup-local` downloads `model.pkl` from a pinned GitHub release asset URL and verifies its SHA-256 checksum
+- `run-local` refuses to start if the model is missing, incompatible, or checksum-mismatched
+- the portable runtime keeps `GET /`, `POST /predict`, and `POST /explain` unchanged
 
-```bash
-FLIGHT_DELAY_RELEASE_MODEL_PATH=/absolute/path/to/vetted/backend-model.pkl
-```
-
-- the workflow stages that file into `backend/model.pkl` before desktop validation, backend freezing, smoke testing, and Electron packaging
-- if the staged model is missing, incompatible, or loads with dependency-version mismatch warnings, the release build fails
-
-Required release runners:
-
-- one self-hosted macOS runner with the `self-hosted` and `macOS` labels
-- one self-hosted Windows runner with the `self-hosted` and `Windows` labels
-
-Release trigger and versioning rules:
-
-- the workflow triggers on tags that match `v*`
-- the tag must match the repo-root `package.json` version exactly
-- example: if `package.json` is `0.3.0`, create tag `v0.3.0`
-
-From the repo root, a typical release flow is:
+Build the Windows portable ZIP from the repo root:
 
 ```bash
-npm version 0.3.0 --no-git-tag-version
-git add package.json package-lock.json
-git commit -m "Release v0.3.0"
-git tag v0.3.0
-git push origin main --tags
+npm run build:portable:windows -- --release-tag=v0.2.0 --model-url=https://github.com/Ashrafur-Khan/Flight-Delay-Predictor/releases/download/v0.2.0/model.pkl --model-sha256=<sha256>
 ```
 
-Expected GitHub Release assets for v1:
+This command:
 
-- one macOS installer named like `flight-delay-predictor-0.3.0-mac-arm64.dmg`
-- one Windows installer named like `flight-delay-predictor-0.3.0-win-x64.exe`
-- one `.sha256` checksum file for each installer
+1. Builds the frontend in release mode.
+2. Stages the backend source, requirements, Windows launch scripts, and bundled frontend.
+3. Generates `release-manifest.json` with the pinned release tag, model URL, checksum, and Python version requirement.
+4. Writes a ZIP to `portable/dist/`.
 
-The workflow intentionally does not publish `latest-mac.yml`, blockmaps, or other auto-update metadata because the app is not shipping auto-update behavior yet.
+Manual release flow:
+
+1. Create the GitHub release tag.
+2. Upload `model.pkl` and `model.pkl.sha256` to that release.
+3. Run `npm run build:portable:windows` with the final model asset URL and checksum.
+4. Upload the resulting ZIP from `portable/dist/` to the same release.
+
+End-user Windows flow:
+
+1. Install Python 3.11.
+2. Extract the ZIP to a writable folder.
+3. Run `setup-local.cmd`.
+4. Run `run-local.cmd`.
 
 The frontend also supports a release-UI toggle:
 
@@ -589,7 +594,7 @@ This script:
   Client-side grounded result assistant. Generates deterministic answers from structured prediction context and can optionally use a small local browser model to polish the answer when explicitly enabled.
 
 - `flight-delay-prediction-form/src/lib/api.ts`
-  Small API client wrapper around `fetch`. Builds requests from either `VITE_API_BASE_URL` or the runtime API base URL injected by Electron.
+  Small API client wrapper around `fetch`. Builds requests from either `VITE_API_BASE_URL`, the runtime API base URL injected by Electron, or the current same-origin host when the portable bundle is served from `/app/`.
 
 - `flight-delay-prediction-form/src/lib/runtime.ts`
   Runtime-detection helpers for distinguishing desktop vs web execution and reading Electron-provided API configuration.
@@ -615,10 +620,13 @@ This script:
 ### Backend
 
 - `backend/main.py`
-  FastAPI app entry point. Wires up CORS, the health endpoint, the `/predict` endpoint, and the `/explain` endpoint.
+  FastAPI app entry point. Wires up CORS, the health endpoint, the `/predict` endpoint, the `/explain` endpoint, and the portable `/app/` frontend-serving path.
 
 - `backend/desktop_entry.py`
   Desktop-only backend launcher used by Electron and PyInstaller. Starts the packaged FastAPI service on a caller-provided localhost port.
+
+- `backend/portable_entry.py`
+  Portable Windows backend launcher. Starts the local FastAPI service on `127.0.0.1` with heuristic fallback disabled.
 
 - `backend/service.py`
   Orchestrates request normalization, feature adaptation, trained-model inference, local heuristic fallback, and debug response assembly.
@@ -648,7 +656,8 @@ This script:
 - The grounded explanation layer is scoped to explaining the current result. It is not a general travel-planning copilot and it does not fetch live travel or weather data.
 - Connected-flight scoring is frontend-only and heuristic. Layovers are not sent to the backend model, and the itinerary score is not a learned multi-leg prediction.
 - The frontend fallback can make the UI appear functional even when the backend is unavailable, so testing should include checking backend logs, the backend health endpoint, or the dev-only debug panel.
-- The desktop app is verified locally but is not yet polished for public distribution. It still needs custom icons, release automation, and production signing/notarization.
+- The desktop app is verified locally on macOS but is not yet polished for public distribution. Releases are still manual, the Windows Electron installer is still deferred, and it still needs custom icons, production signing, and macOS notarization.
+- The current Windows release path is the portable ZIP, which requires a local Python 3.11 install.
 
 ## Current request/response contract
 

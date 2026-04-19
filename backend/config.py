@@ -23,6 +23,7 @@ def _resolve_runtime_paths() -> tuple[Path, Path]:
 REPO_ROOT, BACKEND_DIR = _resolve_runtime_paths()
 DATA_ANALYSIS_DIR = REPO_ROOT / "data-analysis"
 MODEL_ARTIFACT_PATH = BACKEND_DIR / "model.pkl"
+PORTABLE_FRONTEND_BUILD_DIR_ENV_VAR = "FLIGHT_DELAY_FRONTEND_BUILD_DIR"
 DEFAULT_ALLOWED_ORIGINS = [
     "http://localhost:3000",
     "http://127.0.0.1:3000",
@@ -46,3 +47,10 @@ EXPLANATION_LLM_MODEL = os.getenv("FLIGHT_DELAY_EXPLANATION_LLM_MODEL", "").stri
 EXPLANATION_LLM_TIMEOUT_SECONDS = float(
     os.getenv("FLIGHT_DELAY_EXPLANATION_LLM_TIMEOUT_SECONDS", "15").strip() or "15"
 )
+
+
+def resolve_portable_frontend_build_dir() -> Path:
+    configured_path = os.getenv(PORTABLE_FRONTEND_BUILD_DIR_ENV_VAR, "").strip()
+    if configured_path:
+        return Path(configured_path).expanduser().resolve()
+    return (REPO_ROOT / "portable" / "frontend").resolve()

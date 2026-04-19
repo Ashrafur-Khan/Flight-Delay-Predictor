@@ -6,6 +6,7 @@
   "main": "desktop/main.js",
   "scripts": {
     "build:desktop": "node desktop/scripts/build-desktop.mjs",
+    "build:portable:windows": "node scripts/build-portable-release.mjs",
     "build:frontend:desktop": "npm --prefix flight-delay-prediction-form run build",
     "build:backend:desktop": "node desktop/scripts/run-python.mjs -m PyInstaller --noconfirm --clean --distpath desktop/dist/backend desktop/pyinstaller/backend.spec",
     "stage:desktop-release-model": "node desktop/scripts/stage-release-model.mjs",

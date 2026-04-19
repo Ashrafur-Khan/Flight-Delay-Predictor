@@ -5,6 +5,7 @@ dist/
 .vite/
 .cache/
 desktop/.pyinstaller/
+portable/dist/
 *.log
 npm-debug.log*
 yarn-error.log
@@ -33,4 +34,3 @@ data-analysis/cleaned_bts_flight_delay_data.metadata.json
 Thumbs.db
 .idea/
 .vscode/
-backend/model.pkl
