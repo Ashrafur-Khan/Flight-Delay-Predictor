@@ -1,47 +1,64 @@
-# Flight Delay Prediction Form
+# Flight Delay Prediction Frontend
 
-React + Vite implementation exported from the original Figma concept. This folder contains everything needed to run and iterate on the UI locally.
+This directory contains the React 18 + Vite frontend for the Flight Delay Predictor app.
+
+Use the repo-root `README.md` for:
+
+- desktop installer and GitHub Releases guidance
+- backend setup
+- dataset cleaning and model training
+- end-to-end development workflow
+
+Use this file only for frontend-specific notes.
 
 ## Requirements
 
-- Node.js 20 LTS (`v20.11.x` recommended; see project `.nvmrc`).
-- npm 10.2+ (bundled with Node 20).
+- Node.js 20.11+
+- npm 10.2+
 
-## Setup & Development
+## Frontend Setup
 
 ```bash
 npm install
-npm run dev
-```
-
-Visit <http://localhost:3000> to see the app. Edit files in `src/` and Vite will hot-reload automatically.
-
-### Environment variables
-
-Copy `.env.example` to `.env` and adjust the API base URL when the Python backend is available:
-
-```bash
 cp .env.example .env
 ```
 
-- `VITE_API_BASE_URL` defaults to `http://localhost:8000` and should point to the backend endpoint that exposes `POST /predict`.
+Default browser-mode API target:
+
+```bash
+VITE_API_BASE_URL=http://localhost:8000
+```
+
+## Local Development
+
+```bash
+npm run dev
+```
+
+Vite serves the app at <http://localhost:3000>.
 
 ## Production Build
 
 ```bash
-npm run build    # outputs to build/
-npm run preview  # optional: serve the production build locally
+npm run build
+npm run preview
 ```
 
-`npm run preview` runs the optimized bundle so you can sanity-check before deploying.
+The production bundle is written to `build/`.
 
-## Quality & Type Safety
+## Frontend Runtime Notes
 
-- `npm run typecheck` runs `tsc --noEmit` against the strict configuration (`tsconfig.json` + `tsconfig.node.json`).
-- Path aliases mirror the Vite config so editors will no longer warn about missing Radix/shadcn declarations.
+- The frontend submits a direct-route request to the backend.
+- Layovers are scored in the frontend as an itinerary heuristic layer.
+- In browser mode, if the API is unavailable, the app can fall back to a local `mock_fallback` prediction path.
+- In packaged desktop runtime, backend failures should surface as runtime errors instead of silently falling back to `mock_fallback`.
+- The default result assistant experience is client-side and grounded to the current displayed result.
+- `VITE_RELEASE_UI=false` keeps developer-facing diagnostics visible in local development.
+- `VITE_ENABLE_LOCAL_RESULT_ASSISTANT_MODEL=true` enables the optional browser-side model used only to polish grounded assistant phrasing.
 
-## Notes
+## Frontend Quality Checks
 
-- Dependencies are locked via `package-lock.json`—make sure to commit updates whenever packages change.
-- The exported UI now calls `submitPrediction` in `src/services/prediction.ts`, which will hit the backend when configured and otherwise falls back to a local mock.
-- Original design reference: https://www.figma.com/design/ffPYjF3nKSsDTPe9bGyTQ0/Flight-Delay-Prediction-Form--Copy-
+```bash
+npm run typecheck
+npm test
+```
