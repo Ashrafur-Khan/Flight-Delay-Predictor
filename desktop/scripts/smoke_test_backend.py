@@ -29,7 +29,7 @@ def resolve_backend_command(port: int) -> list[str]:
     if frozen_executable.exists():
         return [str(frozen_executable), "--port", str(port)]
 
-    python_command = os.environ.get("PYTHON") or ("python" if os.name == "nt" else "python3")
+    python_command = os.environ.get("PYTHON") or sys.executable or ("python" if os.name == "nt" else "python3")
     return [python_command, "-m", "backend.desktop_entry", "--port", str(port)]
 
 

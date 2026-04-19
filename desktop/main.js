@@ -43,6 +43,19 @@ function getRendererDistPath() {
   return path.resolve(__dirname, '..', 'flight-delay-prediction-form', 'build');
 }
 
+function ensureRendererBuildExists() {
+  const rendererRoot = getRendererDistPath();
+  const indexPath = path.join(rendererRoot, 'index.html');
+
+  if (!fs.existsSync(indexPath)) {
+    throw new Error(
+      `Desktop renderer build is missing. Expected ${indexPath}. Run "npm run build:desktop" and make sure the frontend build completes successfully.`,
+    );
+  }
+
+  return rendererRoot;
+}
+
 function getBundledBackendExecutablePath() {
   return path.join(process.resourcesPath, 'backend', BACKEND_EXECUTABLE);
 }
@@ -215,7 +228,7 @@ function encodeRuntimeConfig() {
 }
 
 function resolveRendererAssetPath(requestPathname) {
-  const rendererRoot = getRendererDistPath();
+  const rendererRoot = ensureRendererBuildExists();
   const normalizedPath = requestPathname === '/' ? '/index.html' : requestPathname;
   const candidatePath = path.resolve(rendererRoot, `.${decodeURIComponent(normalizedPath)}`);
 
@@ -262,20 +275,18 @@ async function createMainWindow() {
 }
 
 async function bootstrapDesktopApp() {
-  registerAppProtocol();
-
   try {
+    ensureRendererBuildExists();
+    registerAppProtocol();
     await startBackendProcess();
+    await createMainWindow();
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Unknown backend startup failure.';
-    runtimeConfig = {
-      runtimeTarget: 'desktop',
-      apiBaseUrl: null,
-      backendStartupError: message,
-    };
+    console.error(message);
+    await stopBackendProcess();
+    app.exit(1);
+    return;
   }
-
-  await createMainWindow();
 }
 
 app.on('before-quit', () => {

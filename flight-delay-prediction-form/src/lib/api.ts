@@ -10,24 +10,7 @@ export interface ApiClientOptions {
 }
 
 export const createApiClient = (options: ApiClientOptions = {}): ApiClient => {
-  const resolvePortableSameOriginBaseUrl = () => {
-    if (typeof window === 'undefined' || window.flightDelayDesktop?.runtimeTarget === 'desktop') {
-      return undefined;
-    }
-
-    const { location } = window;
-    if (!location || !location.origin || !location.pathname.startsWith('/app')) {
-      return undefined;
-    }
-
-    if (location.protocol !== 'http:' && location.protocol !== 'https:') {
-      return undefined;
-    }
-
-    return location.origin;
-  };
-
-  const resolveBaseUrl = () => options.baseUrl ?? getRuntimeConfig().apiBaseUrl ?? resolvePortableSameOriginBaseUrl();
+  const resolveBaseUrl = () => options.baseUrl ?? getRuntimeConfig().apiBaseUrl;
 
   const buildUrl = (path: string) => {
     const baseUrl = resolveBaseUrl();

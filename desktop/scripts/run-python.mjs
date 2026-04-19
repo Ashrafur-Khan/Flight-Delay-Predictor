@@ -19,6 +19,7 @@ const result = spawnSync(pythonCommand, forwardedArgs, {
   stdio: 'inherit',
   env: {
     ...process.env,
+    PYTHON: pythonCommand,
     PYINSTALLER_CONFIG_DIR: pyInstallerConfigDir,
   },
 });
