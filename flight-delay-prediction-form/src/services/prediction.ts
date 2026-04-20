@@ -1,5 +1,6 @@
 import { createApiClient } from '@/lib/api';
 import { findAirportByCode, normalizeAirportCode } from '@/lib/airports';
+import { getRuntimeConfig, isDesktopRuntime } from '@/lib/runtime';
 import type {
   FlightFormData,
   FlightValidationIssue,
@@ -208,8 +209,13 @@ export function validateFlightForm(data: FlightFormData): FlightValidationResult
 export async function submitPrediction(data: FlightFormData): Promise<PredictionResponse> {
   const { request, normalizedConnections } = preparePredictionRequest(data);
   const itinerarySummary = buildItinerarySummary(request, normalizedConnections);
+  const runtimeConfig = getRuntimeConfig();
 
   if (!apiClient.baseUrl) {
+    if (runtimeConfig.runtimeTarget === 'desktop') {
+      throw new Error(runtimeConfig.backendStartupError ?? 'The packaged local prediction service is not configured.');
+    }
+
     console.info('API base URL not configured. Falling back to mock prediction.');
     return finalizePrediction(generateMockPrediction(request), itinerarySummary);
   }
@@ -222,6 +228,13 @@ export async function submitPrediction(data: FlightFormData): Promise<Prediction
       submittedRequest: request,
     }, itinerarySummary);
   } catch (error) {
+    if (isDesktopRuntime()) {
+      const message = error instanceof Error && error.message
+        ? error.message
+        : 'The local desktop prediction service is unavailable.';
+      throw new Error(runtimeConfig.backendStartupError ?? message);
+    }
+
     console.warn('Prediction API request failed; using mock response instead.', error);
     return finalizePrediction(generateMockPrediction(request), itinerarySummary);
   }

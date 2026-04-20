@@ -1,5 +1,6 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+
 from .config import DEFAULT_ALLOWED_ORIGINS, SERVICE_NAME
 from .result_explanation_service import ResultExplanationService
 from .schemas import (

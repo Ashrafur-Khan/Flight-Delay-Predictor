@@ -1,166 +1,136 @@
 # Flight Delay Predictor
 
-This repository contains a small end-to-end flight delay prediction app built from three connected parts:
+Flight Delay Predictor is a small end-to-end app that estimates delay risk for a flight itinerary and explains the result in plain language.
 
-- a React + Vite frontend for collecting flight details from a user
-- a FastAPI backend that accepts those inputs and returns a delay-risk prediction
-- a BTS-based data cleaning and model training workflow used to produce the backend model artifact
+The repository includes four connected parts:
 
-## Project Overview
+- `flight-delay-prediction-form/`: React 18 + Vite frontend
+- `backend/`: FastAPI prediction API, feature adaptation, and explanation services
+- `data-analysis/` plus `data_analysis_runner.py`: BTS dataset cleaning pipeline
+- `desktop/` plus the repo-root `package.json`: Electron desktop packaging flow
 
-At a high level, the app works like this:
+## For End Users
 
-1. A user enters flight details in the frontend such as departure date and time, origin and destination airports, optional layovers, temperature, precipitation, and wind conditions.
-2. The frontend sends the direct-route flight details to the backend `POST /predict` endpoint.
-3. The backend converts those traveler-facing inputs into proxy features that resemble the BTS aggregate delay features used during training.
-4. The backend scores the request and returns a response containing:
-   - `probability`
-   - `riskLevel`
-   - `explanation`
-   - optional `debug` details when explicitly requested
-5. If the user added layovers, the frontend computes per-leg and itinerary-level connected-flight scores on top of the backend or fallback direct-route prediction.
-6. The frontend can use the rendered result plus debug context for grounded follow-up Q&A about that result in a client-side assistant.
-7. The frontend renders the final result directly in the UI.
+Mac and Windows users can now use the app without setting up Python, Node.js, or any other development dependencies.
 
-### What the app is actually predicting
+1. Go to the repository's GitHub Releases page.
+2. Download the installer for your platform:
+   - macOS: `.dmg`
+   - Windows: `.exe`
+3. Install the app normally.
+4. Launch it from your machine like any other desktop app.
 
-The trained model is based on BTS operational delay data, not on a dataset of real traveler-facing inputs. That means the backend does not directly predict from raw values like `JFK`, `8:30 AM`, or `rain`.
+At its current state, the packaged desktop app bundles the built frontend, a frozen local FastAPI backend, and the trained model artifact used by the packaged release. End users do not need to generate datasets, train the model, run a backend server, or install Python separately.
 
-Instead, the backend includes an adaptation layer that derives approximate operational signals from the form input, such as:
+## What The App Does
 
-- route congestion score
-- peak departure traffic score
-- estimated weather delay contribution
-- estimated NAS delay contribution
-- estimated late aircraft delay contribution
+At a high level:
 
-Those derived values are then used to score the request.
+1. The user enters a departure date and time, origin and destination airports, optional layovers, and optional weather inputs.
+2. The frontend sends a direct-route request to `POST /predict`.
+3. The backend normalizes those traveler-facing inputs and maps them to BTS-style operational proxy features.
+4. The backend returns a delay probability, a risk label, and a grounded explanation.
+5. If the user added layovers, the frontend computes an itinerary-level heuristic summary on top of the direct-route result and displays that itinerary score as the top-level result.
+6. The result assistant explains the already-computed result without changing the score.
 
-### Connected flights behavior
 
-The connected flights feature is currently a frontend-only itinerary layer:
+## Current Runtime Behavior
 
-- The form lets the user add layovers in itinerary order.
-- The frontend blocks clearly impossible routes such as `LAX -> LAX` before any scoring request is made.
-- The backend request remains a single direct-route prediction from origin to final destination.
-- When layovers are present, the frontend generates a score for each leg and an aggregate itinerary score.
-- The displayed `probability`, `riskLevel`, and `explanation` are replaced with the itinerary-level result.
-- The original backend or direct-route result is still preserved in the frontend response as:
-  - `baseProbability`
-  - `baseRiskLevel`
-  - `baseExplanation`
-- The UI also shows an `Itinerary Breakdown` panel with one card per leg.
+There are several scoring and explanation paths in the current codebase:
 
-This means connected-flight scoring does not change the backend model input today. It is an additional frontend heuristic layer built on top of the existing single-flight API.
+- Trained backend path:
+  Used when `backend/model.pkl` exists and is compatible with the current runtime.
+- Backend heuristic fallback:
+  Used in local or development environments when no compatible model artifact is available.
+- Frontend mock fallback:
+  Used by the browser app when the API base URL is missing or the backend request fails.
+- Frontend itinerary layer:
+  Used whenever layovers are present. The displayed top-level result becomes the itinerary summary rather than the raw direct-route score.
+- Client-side grounded assistant:
+  This is the default shipped explanation experience.
+- Optional local browser-model polish:
+  Enabled with `VITE_ENABLE_LOCAL_RESULT_ASSISTANT_MODEL=true`. If it cannot initialize, the app falls back to the deterministic client-side assistant.
 
-### Current runtime behavior
+Desktop runtime has one important difference from browser runtime:
 
-There are three important fallbacks in the current stack:
+- The packaged desktop app must not silently fall back to `mock_fallback`. If the bundled backend cannot launch or cannot load a compatible trained model, the app should surface a runtime failure instead of pretending everything is healthy.
 
-- If `backend/model.pkl` does not exist, the backend can return predictions using a clearly labeled heuristic fallback path in local or development environments.
-- If the frontend cannot reach the backend, the frontend falls back to a local mock prediction function so the UI still appears usable.
-- If the user adds layovers, the itinerary score is always computed in the frontend, regardless of whether the direct-route prediction came from the backend or the frontend fallback.
+Release-mode UI behavior:
 
-There is also a development-only debugging path:
+- Production builds enable the trimmed release UI by default.
+- The release UI hides `Debug Details`, visible `Grounded Fields`, and explicit backend/fallback terminology from end users.
+- Local development can force diagnostics back on with `VITE_RELEASE_UI=false`.
 
-- In Vite development mode, the frontend asks the backend for extra scoring diagnostics.
-- When the backend receives `includeDebug: true`, it returns normalized input values, derived BTS-style features, model and dataset metadata, scoring path metadata, fallback reasons when relevant, and notes about thresholds or defaulted values.
-- The frontend shows those details in a collapsible `Debug Details` panel so it is easier to tell whether the result came from the backend or the frontend fallback.
-- When layovers are present, the debug panel also shows the displayed itinerary score alongside the raw backend or direct-route score.
-
-There is also a grounded explanation path:
-
-- The result panel includes an `Ask About This Result` assistant section after a prediction exists.
-- The assistant does not rescore the flight. It only explains the current displayed result, the raw direct-route result when present, itinerary legs, and backend debug metadata when available.
-- The frontend builds a structured `predictionContext` object instead of reasoning from raw user input alone.
-- The default assistant path is fully client-side and deterministic.
-- An optional client-side on-device LLM enhancement can be enabled in the frontend, but it is only used to rewrite or polish the grounded answer and must not change the facts.
-- If the optional client-side LLM enhancement is not enabled, cannot initialize, or is blocked by browser capability or policy, the assistant falls back to the deterministic grounded explainer so the feature still works locally.
-
-So the repository supports a few different states:
-
-- Full stack with trained model: frontend -> backend -> trained model artifact
-- Full stack without trained model in local/dev mode: frontend -> backend -> heuristic backend fallback
-- Frontend only or broken API connection: frontend -> mock prediction fallback
-- Result explanation assistant: frontend -> client-side grounded explanation service -> optional on-device LLM polish or deterministic fallback
-- Connected itinerary mode: frontend itinerary scoring layered on top of any of the three paths above
-
-In the repository's current default state, `backend/model.pkl` is not checked in, so local predictions use the backend heuristic fallback unless you train and save a model artifact.
-
-For a fresh clone, you should assume these generated artifacts are missing unless you create them yourself:
-
-- `backend/model.pkl`
-- `data-analysis/cleaned_bts_flight_delay_data.csv`
-- `data-analysis/cleaned_bts_flight_delay_data.metadata.json`
-
-Those files are intentionally gitignored because they are generated from local training data.
-
-## Repository structure
+## Repository Layout
 
 ```text
 Flight-Delay-Predictor/
 ├── backend/
-│   ├── config.py
-│   ├── feature_adapter.py
 │   ├── main.py
-│   ├── model_service.py
-│   ├── normalization.py
-│   ├── result_explanation_service.py
-│   ├── schemas.py
 │   ├── service.py
+│   ├── feature_adapter.py
+│   ├── result_explanation_service.py
 │   ├── training.py
 │   ├── train_model.py
-│   └── model.pkl
+│   └── desktop_entry.py
 ├── data-analysis/
-│   ├── data-analysis.md
-│   ├── flight_delay_bts_analysis.py
-│   ├── cleaned_bts_flight_delay_data.csv
-│   └── cleaned_bts_flight_delay_data.metadata.json
-├── tests/
-│   ├── test_adapter.py
-│   ├── test_api.py
-│   └── test_data_pipeline.py
+│   └── flight_delay_bts_analysis.py
+├── desktop/
+│   ├── main.js
+│   ├── preload.js
+│   ├── electron-builder.yml
+│   ├── pyinstaller/
+│   └── scripts/
 ├── flight-delay-prediction-form/
-│   ├── src/
-│   ├── .env.example
-│   ├── package.json
-│   └── vite.config.ts
+│   ├── src/components/
+│   ├── src/services/
+│   ├── src/lib/
+│   └── src/types/
+├── tests/
+├── data_analysis_runner.py
+├── package.json
 ├── requirements.txt
 └── README.md
 ```
 
-### What each folder is responsible for
+Key files:
 
-- `flight-delay-prediction-form/`
-  The frontend app. It renders the form, normalizes airport input before submit, supports connected-flight layovers, calls the API, displays itinerary and direct-route results, exposes a dev-only debug panel when backend debug data is available, and provides a grounded client-side follow-up assistant for the current result.
+- `flight-delay-prediction-form/src/components/FlightDelayPredictor.tsx`
+  Main prediction form UI.
+- `flight-delay-prediction-form/src/services/prediction.ts`
+  Frontend submission flow, validation, fallback handling, and itinerary aggregation.
+- `flight-delay-prediction-form/src/services/resultAssistant.ts`
+  Frontend result-context builder for grounded follow-up Q&A.
+- `flight-delay-prediction-form/src/services/localResultAssistant.ts`
+  Default client-side grounded explainer and optional local-model polish path.
+- `flight-delay-prediction-form/src/lib/runtime.ts`
+  Desktop vs web runtime detection and injected API base URL handling.
+- `backend/main.py`
+  FastAPI entrypoint exposing `GET /`, `POST /predict`, and `POST /explain`.
+- `backend/service.py`
+  Normalization, feature adaptation, model inference, heuristic fallback, and debug payload assembly.
+- `backend/result_explanation_service.py`
+  Grounded explanation service for the optional backend `/explain` compatibility path.
+- `backend/train_model.py`
+  Training entrypoint that produces `backend/model.pkl`.
+- `data-analysis/flight_delay_bts_analysis.py`
+  BTS CSV cleaning script that produces the model-ready dataset and metadata.
+- `desktop/main.js`
+  Electron main process that starts the local backend and injects runtime config into the renderer.
+- `desktop/scripts/build-desktop.mjs`
+  End-to-end desktop build pipeline.
 
-- `backend/`
-  The API and scoring layer. It exposes `GET /`, `POST /predict`, and `POST /explain`, validates requests, normalizes user inputs, adapts them into BTS-style model features, loads a versioned model artifact when present, can return structured debug metadata when requested, and can answer grounded follow-up questions about an already-computed result.
-
-- `data-analysis/`
-  The BTS dataset cleaning and feature engineering workflow. It prepares the cleaned CSV and metadata that `backend/train_model.py` uses for model training.
-
-- `tests/`
-  Backend coverage for the adapter, the dataset pipeline, and the FastAPI surface.
-
-## Dev Notes
+## Developer Setup
 
 ### Prerequisites
 
-#### Frontend
-
-- Node.js 20 LTS
-- npm 10.2+
-
-#### Backend and analysis
-
+- Node.js 20.11+ and npm 10.2+
 - Python 3.10+
 - `venv`
-- `pip`
 
-## Setup
+The backend, training flow, and desktop packaging all depend on the pinned Python packages in `requirements.txt`.
 
-### 1. Backend environment
+### 1. Install dependencies
 
 From the repo root:
 
@@ -168,100 +138,25 @@ From the repo root:
 python3 -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
+npm install
 ```
 
-### 2. Generate the dataset and model artifact
-
-Before you expect the backend to use a trained model, you need to create the cleaned dataset and train the model artifact.
-
-Important:
-
-- `backend/model.pkl` is not committed to the repo.
-- `data-analysis/cleaned_bts_flight_delay_data.csv` is not committed to the repo.
-- `data-analysis/cleaned_bts_flight_delay_data.metadata.json` is not committed to the repo.
-- If you skip this step, the backend still runs locally, but it uses the heuristic fallback path instead of the trained model.
-
-If you already have a raw BTS export, generate the cleaned dataset from the repo root:
-
-```bash
-source .venv/bin/activate
-python3 data-analysis/flight_delay_bts_analysis.py --input /path/to/Airline_Delay_Cause.csv
-```
-
-If you are using the local BTS file currently present in this repo, the command is:
-
-```bash
-source .venv/bin/activate
-python3 data-analysis/flight_delay_bts_analysis.py --input backend/data/Airline_Delay_Cause.csv
-```
-
-This creates:
-
-- `data-analysis/cleaned_bts_flight_delay_data.csv`
-- `data-analysis/cleaned_bts_flight_delay_data.metadata.json`
-
-Then train the backend model artifact:
-
-```bash
-source .venv/bin/activate
-python3 backend/train_model.py
-```
-
-This creates:
-
-- `backend/model.pkl`
-
-After training, you can verify the artifact exists by starting the backend and checking that `GET /` reports `"modelLoaded": true`.
-
-### 3. Frontend environment
-
-In a separate terminal:
+Then install frontend dependencies:
 
 ```bash
 cd flight-delay-prediction-form
 npm install
 cp .env.example .env
+cd ..
 ```
 
-The default frontend API base URL is:
+The browser app uses this default backend URL:
 
 ```bash
 VITE_API_BASE_URL=http://localhost:8000
 ```
 
-If `VITE_API_BASE_URL` is missing, the frontend skips the backend call and uses its local mock prediction path.
-
-### 4. Optional client-side result assistant model
-
-The result assistant works without extra setup. Its default path is a deterministic grounded client-side explainer.
-
-The frontend also supports an optional on-device LLM enhancement for the result assistant. This is disabled by default and only affects the assistant phrasing layer. It does not change scoring, probabilities, risk labels, or citations.
-
-To enable the optional client-side LLM layer in the frontend:
-
-```bash
-VITE_ENABLE_LOCAL_RESULT_ASSISTANT_MODEL=true
-```
-
-When enabled, the frontend attempts to load a small local Transformers.js model in the browser. If the model cannot activate because WebGPU is unavailable, device capability is insufficient, CSP blocks the runtime, or model loading fails, the assistant automatically falls back to the deterministic grounded client-side explainer.
-
-### 5. Optional backend grounded explanation provider configuration
-
-The backend still supports an optional grounded explanation provider for `POST /explain`, but the default app experience no longer depends on it because the result assistant now works client-side.
-
-Supported environment variables for the backend:
-
-```bash
-FLIGHT_DELAY_EXPLANATION_LLM_PROVIDER=openai_compatible
-FLIGHT_DELAY_EXPLANATION_LLM_API_URL=https://api.openai.com/v1/chat/completions
-FLIGHT_DELAY_EXPLANATION_LLM_API_KEY=your_api_key
-FLIGHT_DELAY_EXPLANATION_LLM_MODEL=gpt-4.1-mini
-FLIGHT_DELAY_EXPLANATION_LLM_TIMEOUT_SECONDS=15
-```
-
-If these are omitted, backend `POST /explain` still works locally using the deterministic grounded fallback in `backend/result_explanation_service.py`.
-
-## Running the app locally
+### 2. Run the app locally
 
 Start the backend from the repo root:
 
@@ -277,387 +172,226 @@ cd flight-delay-prediction-form
 npm run dev
 ```
 
-The local app endpoints are:
+Local URLs:
 
 - frontend: <http://localhost:3000>
 - backend: <http://localhost:8000>
-- backend health endpoint: <http://localhost:8000/>
+- backend health: <http://localhost:8000/>
 
-### What to expect after setup
+What to expect:
 
-- If you completed the dataset-generation and training steps, the backend should score requests with the trained model artifact.
-- If you did not complete those steps, the backend can still run in local development, but it will use the heuristic fallback estimator instead of the trained model.
-- If the frontend cannot reach the backend at all, it can still display predictions using its own frontend mock fallback.
-- The result assistant works client-side by default.
-- If the optional client-side LLM layer is enabled and activates successfully, it can rewrite the grounded answer locally in the browser.
-- If that optional client-side LLM layer does not activate, the assistant falls back to the deterministic grounded client-side explainer.
+- If the backend is reachable, the frontend will call `POST /predict`.
+- If the backend is unreachable in browser mode, the frontend can fall back to `mock_fallback`.
+- If layovers are present, the displayed result becomes the itinerary-level score.
+- The default shipped assistant experience is the client-side grounded explainer.
 
-## End-to-end test flow
+### 3. Clean the BTS dataset
 
-For a normal local smoke test:
+Use the data cleaning script to turn a raw BTS CSV export into the model-ready dataset used by training.
 
-1. Start the backend.
-2. Start the frontend.
-3. Open <http://localhost:3000>.
-4. Fill in the required fields:
-   - departure date
-   - departure time
-   - origin airport
-   - destination airport
-5. Optionally add one or more layovers in itinerary order.
-6. Optionally fill in advanced factors such as temperature, precipitation, and wind.
-7. Click `Predict Delay Probability`.
-8. Confirm the result panel shows a probability, risk level, and explanation.
-9. If layovers were added, confirm the UI also shows an `Itinerary Breakdown` section with one entry per leg.
-10. Ask a follow-up question in `Ask About This Result` and confirm the answer stays consistent with the displayed score and explanation.
-11. If `VITE_ENABLE_LOCAL_RESULT_ASSISTANT_MODEL=true` is enabled, confirm the assistant still returns grounded answers and falls back cleanly to the deterministic client-side explainer when the local model cannot activate.
-
-In Vite dev mode, you can also expand `Debug Details` in the result panel to inspect:
-
-- whether the result came from the backend or the frontend mock fallback
-- whether the backend model was loaded
-- the model version and dataset version used for scoring when available
-- the normalized request values used for scoring
-- the derived feature values
-- the raw direct-route score versus the displayed itinerary score when layovers are present
-- fallback reasons or backend notes explaining defaulted values or thresholds that were not crossed
-
-The grounded assistant should follow the same source-of-truth rules:
-
-- it must not change the displayed probability or risk label
-- it should explain the displayed itinerary result separately from the raw direct-route result when layovers are present
-- it should distinguish frontend mock fallback, backend heuristic fallback, and backend hybrid-blend paths when that information is available
-
-### How to tell which prediction path is being used
-
-- If the backend terminal logs a `POST /predict` request, the frontend reached the API.
-- If `http://localhost:8000/` reports `"modelLoaded": true`, the backend found `backend/model.pkl`.
-- If the backend is stopped and the frontend still shows a prediction, that result is coming from the frontend mock fallback.
-- If layovers are present, the top-level displayed score is the frontend itinerary score rather than the raw backend direct-route score.
-- In frontend dev mode, the `Debug Details` panel labels the response source as either `Backend API` or `Frontend mock fallback`.
-
-## Data and model workflow
-
-The model training flow is:
-
-1. Start with a raw BTS CSV export.
-2. Run `data-analysis/flight_delay_bts_analysis.py`.
-3. Generate `data-analysis/cleaned_bts_flight_delay_data.csv` and `data-analysis/cleaned_bts_flight_delay_data.metadata.json`.
-4. Run `backend/train_model.py`.
-5. Save the trained model artifact as `backend/model.pkl`.
-
-### Generate the cleaned dataset
+If you have your own raw BTS export:
 
 ```bash
+source .venv/bin/activate
 python3 data-analysis/flight_delay_bts_analysis.py --input /path/to/Airline_Delay_Cause.csv
 ```
 
-This script:
-
-- reads the raw BTS CSV
-- validates that required BTS columns are present
-- drops a few unneeded columns
-- filters out rows with zero arriving flights
-- fills missing delay values
-- creates normalized delay features
-- labels rows with `delay_event`
-- writes the cleaned dataset plus metadata describing dataset version, target definition, feature names, and split strategy
-
-### Train the model
+If you want to use the BTS CSV currently present in this repo:
 
 ```bash
+source .venv/bin/activate
+python3 data-analysis/flight_delay_bts_analysis.py --input backend/data/Airline_Delay_Cause.csv
+```
+
+This generates:
+
+- `data-analysis/cleaned_bts_flight_delay_data.csv`
+- `data-analysis/cleaned_bts_flight_delay_data.metadata.json`
+
+The cleaned dataset script:
+
+- validates required BTS columns
+- filters out rows with `arr_flights <= 0`
+- fills missing delay-cause columns with `0`
+- derives normalized delay features
+- writes dataset metadata used by training
+
+### 4. Train the model
+
+After the cleaned dataset exists:
+
+```bash
+source .venv/bin/activate
 python3 backend/train_model.py
 ```
 
-This script:
+This writes:
 
-- loads the cleaned dataset and dataset metadata
-- trains logistic regression and random forest candidate models
-- calibrates the selected model probabilities
-- saves a versioned model artifact to `backend/model.pkl` with feature order and training metadata
+- `backend/model.pkl`
 
-## Key files
+Training behavior:
 
-### Frontend
+- loads the cleaned dataset and metadata
+- validates the required feature schema
+- trains logistic regression and random forest candidates
+- calibrates the selected model
+- saves the model, feature order, dataset version, and training metadata
 
-- `flight-delay-prediction-form/src/components/FlightDelayPredictor.tsx`
-  Main form container. Holds form state, supports adding and removing layovers, submits predictions, and manages loading and error state.
+### 5. Verify which scoring path is active
 
-- `flight-delay-prediction-form/src/services/prediction.ts`
-  Frontend prediction service. Normalizes airport values, requests backend debug data in dev mode, tracks whether the response came from the backend or the frontend fallback, computes connected-itinerary leg scores, and rewrites the displayed result to the aggregate itinerary score when layovers exist.
+The active runtime path matters because the UI can still appear usable while a fallback is active.
 
-- `flight-delay-prediction-form/src/services/resultAssistant.ts`
-  Frontend explanation service. Builds a grounded explanation context from the current rendered result, derives suggested prompts, and routes follow-up questions into the client-side assistant flow.
+Use these checks:
 
-- `flight-delay-prediction-form/src/services/localResultAssistant.ts`
-  Client-side grounded result assistant. Generates deterministic answers from structured prediction context and can optionally use a small local browser model to polish the answer when explicitly enabled.
+- `GET /` returning `"modelLoaded": true` means the backend found a compatible `backend/model.pkl`.
+- If the backend is stopped and the browser UI still predicts, you are on the frontend `mock_fallback` path.
+- If layovers are present, the top-level displayed score is the frontend itinerary summary rather than the raw backend direct-route score.
+- In local development with `VITE_RELEASE_UI=false`, the `Debug Details` panel shows the response source and backend debug metadata.
 
-- `flight-delay-prediction-form/src/lib/api.ts`
-  Small API client wrapper around `fetch`. Builds requests from `VITE_API_BASE_URL`.
+## Testing And Verification
 
-- `flight-delay-prediction-form/src/lib/airports.ts`
-  Shared airport list plus helpers for display labels and airport-code normalization.
+Backend tests:
 
-- `flight-delay-prediction-form/src/types/flight.ts`
-  Shared frontend request and response types used by the form, API service, itinerary scoring, and debug UI.
-
-- `flight-delay-prediction-form/src/components/AirportInput.tsx`
-  Airport selector UI. Stores airport codes in form state while still showing user-friendly labels.
-
-- `flight-delay-prediction-form/src/components/PredictionResult.tsx`
-  Prediction result UI. Shows the main result, the grounded follow-up assistant, the connected-itinerary breakdown, and a dev-only debug panel when debug payloads are present.
-
-- `flight-delay-prediction-form/src/components/ResultAssistant.tsx`
-  Grounded result-chat UI. Lets the user ask follow-up questions about the current result without changing the underlying score.
-
-- `flight-delay-prediction-form/vite.config.ts`
-  Vite config, including the dev server port (`3000`).
-
-### Backend
-
-- `backend/main.py`
-  FastAPI app entry point. Wires up CORS, the health endpoint, the `/predict` endpoint, and the `/explain` endpoint.
-
-- `backend/service.py`
-  Orchestrates request normalization, feature adaptation, trained-model inference, local heuristic fallback, and debug response assembly.
-
-- `backend/result_explanation_service.py`
-  Builds grounded explanation context, applies source-aware guardrails, and routes result Q&A to either an external OpenAI-compatible provider or the deterministic local fallback explainer.
-
-- `backend/feature_adapter.py`
-  Converts traveler-facing single-leg inputs into the fixed BTS-style feature vector expected by the trained model.
-
-- `backend/train_model.py`
-  Training entry point for the BTS-derived model artifact.
-
-### Data analysis
-
-- `data-analysis/flight_delay_bts_analysis.py`
-  Data cleaning and feature engineering script for the raw BTS dataset.
-
-- `data-analysis/data-analysis.md`
-  Placeholder notes file for documenting dataset findings and analysis decisions.
-
-## Current limitations
-
-- The backend model is trained on BTS aggregate operational features rather than direct traveler-facing inputs.
-- Airport and weather handling are heuristic, not driven by live aviation or weather APIs.
-- The backend still uses a local/dev heuristic fallback when no trained model artifact is present.
-- The grounded explanation layer is scoped to explaining the current result. It is not a general travel-planning copilot and it does not fetch live travel or weather data.
-- Connected-flight scoring is frontend-only and heuristic. Layovers are not sent to the backend model, and the itinerary score is not a learned multi-leg prediction.
-- The frontend fallback can make the UI appear functional even when the backend is unavailable, so testing should include checking backend logs, the backend health endpoint, or the dev-only debug panel.
-
-## Current request/response contract
-
-### Backend request contract
-
-The frontend sends the backend a direct-route request shaped like this:
-
-```json
-{
-  "departureDate": "2026-03-15",
-  "departureTime": "08:30",
-  "originAirport": "JFK",
-  "destinationAirport": "LAX",
-  "temperature": "42",
-  "precipitation": "rain",
-  "wind": "moderate",
-  "includeDebug": true
-}
+```bash
+source .venv/bin/activate
+python3 -m unittest discover -s tests
 ```
 
-`includeDebug` is optional and is intended for development-time inspection.
+Frontend checks:
 
-During the current compatibility window, older clients may still send `duration`, but the backend ignores it and does not include it in normalized state or debug output.
-
-Layovers are not part of the backend contract today.
-
-### Backend grounded explanation request contract
-
-The frontend sends the backend a grounded result-chat request shaped like this:
-
-```json
-{
-  "predictionContext": {
-    "source": "backend",
-    "submittedRequest": {
-      "departureDate": "2026-03-15",
-      "departureTime": "08:30",
-      "originAirport": "JFK",
-      "destinationAirport": "LAX",
-      "temperature": "42",
-      "precipitation": "rain",
-      "wind": "moderate",
-      "includeDebug": true
-    },
-    "displayedResult": {
-      "probability": 60,
-      "riskLevel": "moderate",
-      "explanation": "..."
-    },
-    "directRouteResult": {
-      "probability": 47,
-      "riskLevel": "moderate",
-      "explanation": "..."
-    },
-    "itinerarySummary": {
-      "aggregateProbability": 60,
-      "aggregateRiskLevel": "moderate",
-      "aggregateExplanation": "...",
-      "legs": [
-        {
-          "originAirport": "JFK",
-          "destinationAirport": "ORD",
-          "probability": 58,
-          "riskLevel": "moderate",
-          "explanation": "..."
-        }
-      ]
-    },
-    "debug": {
-      "pathUsed": "hybrid_blend",
-      "modelLoaded": true,
-      "modelVersion": "demo-model",
-      "datasetVersion": "demo-dataset",
-      "rawInput": {
-        "departureDate": "2026-03-15",
-        "departureTime": "08:30",
-        "originAirport": "JFK",
-        "destinationAirport": "LAX",
-        "temperatureF": 42,
-        "precipitation": "rain",
-        "wind": "moderate"
-      },
-      "derivedFeatures": {
-        "month": 3,
-        "arr_flights": 136,
-        "weather_delay_norm": 0.14,
-        "nas_delay_norm": 0.257,
-        "security_delay_norm": 0.0163,
-        "late_aircraft_delay_norm": 0.0925,
-        "total_delay_norm": 0.5058,
-        "route_congestion_score": 0.75,
-        "peak_departure_score": 0.35
-      },
-      "finalProbability": 47,
-      "notes": [
-        "..."
-      ]
-    }
-  },
-  "question": "Explain the itinerary impact.",
-  "conversationHistory": [
-    {
-      "role": "user",
-      "content": "Why is this risk moderate?"
-    }
-  ]
-}
+```bash
+cd flight-delay-prediction-form
+npm run typecheck
+npm test
+npm run build
 ```
 
-`predictionContext` is the source of truth for the assistant. The backend explanation layer should not infer from raw form input alone.
+Desktop verification:
 
-### Backend response contract
-
-The backend returns:
-
-```json
-{
-  "probability": 47,
-  "riskLevel": "moderate",
-  "explanation": "...",
-  "debug": {
-    "pathUsed": "heuristic_fallback",
-    "modelLoaded": false,
-    "modelVersion": null,
-    "datasetVersion": null,
-    "rawInput": {
-      "departureDate": "2026-03-15",
-      "departureTime": "08:30",
-      "originAirport": "JFK",
-      "destinationAirport": "LAX",
-      "temperatureF": 42,
-      "precipitation": "rain",
-      "wind": "moderate"
-    },
-    "derivedFeatures": {
-      "month": 3,
-      "arr_flights": 136,
-      "weather_delay_norm": 0.14,
-      "nas_delay_norm": 0.257,
-      "security_delay_norm": 0.0163,
-      "late_aircraft_delay_norm": 0.0925,
-      "total_delay_norm": 0.5058,
-      "route_congestion_score": 0.75,
-      "peak_departure_score": 0.35
-    },
-    "finalProbability": 95,
-    "fallbackReason": "No compatible trained model artifact is available; using the development fallback estimator.",
-    "notes": [
-      "No compatible trained model artifact is available; using the development fallback estimator."
-    ]
-  }
-}
+```bash
+npm run validate:desktop-backend
+npm run test:desktop:backend-smoke
 ```
 
-When `includeDebug` is omitted or `false`, the backend returns the same top-level `probability`, `riskLevel`, and `explanation` fields without the `debug` object.
+If you change prediction logic, verify both:
 
-### Backend grounded explanation response contract
+- direct-route prediction still works
+- itinerary aggregation still rewrites the displayed top-level result correctly
 
-The backend returns:
+If you change the explanation flow, verify both:
 
-```json
-{
-  "answer": "...",
-  "citations": [
-    "displayedResult.probability",
-    "displayedResult.explanation",
-    "debug.pathUsed",
-    "itinerarySummary.legs"
-  ],
-  "disclaimer": "This answer is grounded in the backend hybrid blend path, where the trained model can only make a bounded adjustment to the heuristic score.",
-  "suggestedFollowups": [
-    "Which factors mattered most here?",
-    "Summarize this result in plain language.",
-    "Explain the itinerary impact.",
-    "What does hybrid blend mean here?"
-  ]
-}
+- the displayed prediction stays unchanged
+- release mode still hides `Grounded Fields`, debug sections, and explicit backend/fallback terminology
+
+## Desktop Packaging
+
+The desktop app is built from the repo root and packages:
+
+- the production frontend build
+- a frozen backend executable created with PyInstaller
+- the trained model artifact expected by the packaged backend
+
+Launch the Electron shell against the local checkout:
+
+```bash
+npm run start:desktop
 ```
 
-`disclaimer` is optional and appears when the result source or scoring path requires extra guardrails, such as frontend mock fallback or heuristic fallback.
+Build a current-platform installer:
 
-### Frontend-augmented response shape for connected itineraries
-
-When layovers are present, the frontend augments the direct-route result before rendering it. The displayed object can also include:
-
-```json
-{
-  "baseProbability": 47,
-  "baseRiskLevel": "moderate",
-  "baseExplanation": "...",
-  "itinerarySummary": {
-    "legs": [
-      {
-        "from": "JFK",
-        "to": "ORD",
-        "probability": 58,
-        "riskLevel": "moderate",
-        "explanation": "..."
-      },
-      {
-        "from": "ORD",
-        "to": "LAX",
-        "probability": 51,
-        "riskLevel": "moderate",
-        "explanation": "..."
-      }
-    ],
-    "aggregateProbability": 60,
-    "aggregateRiskLevel": "moderate",
-    "aggregateExplanation": "..."
-  }
-}
+```bash
+npm run build:desktop
 ```
 
-In that case, the rendered top-level `probability`, `riskLevel`, and `explanation` shown in the UI come from `itinerarySummary`, while the original direct-route result remains available in the `base*` fields.
+That build pipeline does the following:
+
+1. Cleans previous desktop build output.
+2. Optionally stages a release model from `FLIGHT_DELAY_RELEASE_MODEL_PATH`.
+3. Validates that a compatible trained model artifact is available.
+4. Builds the frontend.
+5. Freezes the backend.
+6. Smoke-tests the frozen backend on localhost.
+7. Packages the Electron app for the current platform.
+
+Installer outputs are written to:
+
+```text
+desktop/dist/installers/
+```
+
+Platform targets:
+
+- macOS: `.dmg`
+- Windows: NSIS `.exe`
+- Linux: `AppImage`
+
+Cross-platform note:
+
+- Build each installer on its target operating system, locally or in CI.
+
+Optional checksum preparation for release assets:
+
+```bash
+node desktop/scripts/prepare-release-assets.mjs --extension=.dmg
+node desktop/scripts/prepare-release-assets.mjs --extension=.exe
+```
+
+## Environment Variables
+
+Frontend:
+
+- `VITE_API_BASE_URL`
+  Browser-mode API base URL.
+- `VITE_RELEASE_UI`
+  `true` forces the trimmed release UI, `false` keeps developer diagnostics visible.
+- `VITE_ENABLE_LOCAL_RESULT_ASSISTANT_MODEL`
+  Enables the optional client-side browser model used only to polish grounded assistant phrasing.
+
+Optional backend `/explain` provider configuration:
+
+- `FLIGHT_DELAY_EXPLANATION_LLM_PROVIDER`
+- `FLIGHT_DELAY_EXPLANATION_LLM_API_URL`
+- `FLIGHT_DELAY_EXPLANATION_LLM_API_KEY`
+- `FLIGHT_DELAY_EXPLANATION_LLM_MODEL`
+- `FLIGHT_DELAY_EXPLANATION_LLM_TIMEOUT_SECONDS`
+
+If those backend explanation variables are omitted, `POST /explain` still works through the deterministic local grounded fallback.
+
+## Generated Artifacts
+
+These files are generated locally and are gitignored:
+
+- `backend/model.pkl`
+- `data-analysis/cleaned_bts_flight_delay_data.csv`
+- `data-analysis/cleaned_bts_flight_delay_data.metadata.json`
+
+Do not assume they will always be present on a fresh machine, new branch, or clean clone. Regenerate them when needed.
+
+For public desktop releases, the packaged installer should include a validated trained model artifact so end users do not need to perform any of those steps themselves.
+
+## Known Constraints
+
+- The model is trained on BTS aggregate operational features, not raw traveler-entered flight records.
+- The backend adapts traveler inputs into BTS-like proxy features heuristically.
+- Connected itineraries are not sent to the backend as a learned multi-leg model input.
+- Airport and weather handling are static and heuristic; there are no live external aviation or weather APIs in this repo.
+- The grounded explanation layer explains the current result only. It is not a general travel copilot.
+- Browser-mode fallback paths can make the UI appear healthy even when the backend is unavailable, so debugging should always confirm which path is active.
+
+## Practical Workflow
+
+For most development work:
+
+1. Install Python and Node dependencies.
+2. Start the backend and frontend locally.
+3. Confirm whether you are on the trained-model path, backend heuristic fallback path, or frontend mock fallback path.
+4. Make the smallest coherent change across the frontend and backend contract when needed.
+5. Run targeted tests for the area you changed.
+
+For model or release work:
+
+1. Clean the BTS dataset.
+2. Train `backend/model.pkl`.
+3. Validate the model artifact.
+4. Build the desktop installer on the target platform.
+5. Verify the packaged app works on a machine without Python installed.

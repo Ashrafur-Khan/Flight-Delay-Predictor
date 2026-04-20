@@ -1,6 +1,5 @@
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { renderToStaticMarkup } from 'react-dom/server';
-import { PredictionResult } from '../src/components/PredictionResult';
 import {
   buildPredictionExplanationContext,
   getAssistantContextNotice,
@@ -75,6 +74,11 @@ const buildPrediction = (overrides: Partial<PredictionResponse> = {}): Predictio
   ...overrides,
 });
 
+afterEach(() => {
+  vi.unstubAllEnvs();
+  vi.resetModules();
+});
+
 describe('result assistant helpers', () => {
   it('builds a grounded context from an itinerary prediction', () => {
     const context = buildPredictionExplanationContext(buildPrediction({
@@ -112,7 +116,8 @@ describe('result assistant helpers', () => {
 });
 
 describe('PredictionResult assistant rendering', () => {
-  it('shows the assistant panel only when a prediction exists', () => {
+  it('shows the assistant panel only when a prediction exists', async () => {
+    const { PredictionResult } = await import('../src/components/PredictionResult');
     const emptyMarkup = renderToStaticMarkup(
       <PredictionResult prediction={null} isLoading={false} hasSubmitted={false} />,
     );
@@ -125,7 +130,8 @@ describe('PredictionResult assistant rendering', () => {
     expect(filledMarkup).toContain('What does hybrid blend mean?');
   });
 
-  it('renders the mock-fallback context notice in the assistant panel', () => {
+  it('renders the mock-fallback context notice in the assistant panel', async () => {
+    const { PredictionResult } = await import('../src/components/PredictionResult');
     const markup = renderToStaticMarkup(
       <PredictionResult
         prediction={buildPrediction({
@@ -138,5 +144,16 @@ describe('PredictionResult assistant rendering', () => {
     );
 
     expect(markup).toContain('frontend mock fallback result');
+  });
+
+  it('hides grounded fields in release mode', async () => {
+    vi.stubEnv('VITE_RELEASE_UI', 'true');
+    const { ResultAssistant } = await import('../src/components/ResultAssistant');
+
+    const markup = renderToStaticMarkup(
+      <ResultAssistant prediction={buildPrediction()} />,
+    );
+
+    expect(markup).not.toContain('Grounded Fields');
   });
 });

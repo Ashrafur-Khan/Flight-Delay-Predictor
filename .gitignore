@@ -4,6 +4,8 @@ build/
 dist/
 .vite/
 .cache/
+desktop/.pyinstaller/
+portable/dist/
 *.log
 npm-debug.log*
 yarn-error.log
