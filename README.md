@@ -22,6 +22,15 @@ Mac and Windows users can now use the app without setting up Python, Node.js, or
 
 At its current state, the packaged desktop app bundles the built frontend, a frozen local FastAPI backend, and the trained model artifact used by the packaged release. End users do not need to generate datasets, train the model, run a backend server, or install Python separately.
 
+Desktop OS compatibility:
+
+- Current macOS release artifact:
+  The checked-in desktop artifact is `flight-delay-predictor-0.2.0-mac-arm64.dmg`, and the packaged app declares `LSMinimumSystemVersion=11.0`. Both the Electron app binary and the frozen backend are `arm64`, so the current macOS release should be documented as Apple Silicon only on macOS 11 Big Sur or later, and should reliably work on any macOS running Sonoma or later. There are known issues with MacOS systems that are running any versions older than Sonoma. We had no access to older Mac's to troubleshoot before deadline. It is not compatible with Intel Macs.
+- Windows release policy:
+  This repo uses Electron `35.x`, which supports Windows 10 and later, and the desktop backend is frozen with PyInstaller on the build host. 
+- Build-host note:
+  Desktop installers are host-native in this repo. `npm run build:desktop` builds for the current operating system and packages a backend binary produced on that same machine. If you need wider platform coverage, build and verify installers separately on each target OS and architecture.
+
 ## What The App Does
 
 At a high level:

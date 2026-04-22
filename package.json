@@ -11,6 +11,7 @@
     "stage:desktop-release-model": "node desktop/scripts/stage-release-model.mjs",
     "validate:desktop-backend": "node desktop/scripts/run-python.mjs desktop/scripts/validate_backend_release.py",
     "test:desktop:backend-smoke": "node desktop/scripts/run-python.mjs desktop/scripts/smoke_test_backend.py",
+    "test:desktop:main": "node --test desktop/*.test.js",
     "start:desktop": "electron ."
   },
   "devDependencies": {

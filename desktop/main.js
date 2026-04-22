@@ -1,16 +1,27 @@
-const { app, BrowserWindow, net, protocol } = require('electron');
+const { app, BrowserWindow, ipcMain, net, protocol } = require('electron');
 const { spawn } = require('node:child_process');
 const fs = require('node:fs');
 const path = require('node:path');
 const nodeNet = require('node:net');
 const { pathToFileURL } = require('node:url');
 
+const {
+  BACKEND_RESTART_DELAYS_MS,
+  createBackendStatus,
+  focusWindow,
+  getRecoveryStatus,
+  getRestartDelayMs,
+} = require('./runtimeHelpers');
+
 const APP_ORIGIN = 'app://-';
 const INDEX_URL = `${APP_ORIGIN}/index.html`;
 const RUNTIME_ARG_PREFIX = '--flight-delay-runtime-config=';
+const BACKEND_STATUS_CHANNEL = 'flight-delay-backend-status';
+const BACKEND_ENSURE_READY_CHANNEL = 'flight-delay-backend-ensure-ready';
 const BACKEND_EXECUTABLE = process.platform === 'win32'
   ? 'flight-delay-backend.exe'
   : 'flight-delay-backend';
+const MAX_BACKEND_RESTART_ATTEMPTS = BACKEND_RESTART_DELAYS_MS.length;
 
 protocol.registerSchemesAsPrivileged([
   {
@@ -25,15 +36,24 @@ protocol.registerSchemesAsPrivileged([
   },
 ]);
 
+const gotSingleInstanceLock = app.requestSingleInstanceLock();
+if (!gotSingleInstanceLock) {
+  app.quit();
+}
+
 let mainWindow = null;
 let backendProcess = null;
+let backendPort = null;
 let backendStartupLogs = [];
-let backendLaunchError = null;
+let backendStartPromise = null;
+let backendRecoveryPromise = null;
 let runtimeConfig = {
   runtimeTarget: 'desktop',
   apiBaseUrl: null,
   backendStartupError: null,
+  backendStatus: createBackendStatus(),
 };
+let ipcHandlersRegistered = false;
 
 function getRepoRoot() {
   return path.resolve(__dirname, '..');
@@ -107,6 +127,14 @@ async function findFreePort() {
   });
 }
 
+function getBackendBaseUrl() {
+  return backendPort === null ? null : `http://127.0.0.1:${backendPort}`;
+}
+
+function getErrorMessage(error, fallback = 'Unknown desktop runtime failure.') {
+  return error instanceof Error && error.message ? error.message : fallback;
+}
+
 function pushBackendLog(chunk) {
   const text = String(chunk).trim();
   if (!text) {
@@ -117,15 +145,70 @@ function pushBackendLog(chunk) {
   backendStartupLogs = backendStartupLogs.slice(-20);
 }
 
-async function waitForBackendHealth(baseUrl, timeoutMs = 45000) {
+function formatBackendLogTail() {
+  return backendStartupLogs.length > 0
+    ? ` Backend logs: ${backendStartupLogs.join(' | ')}`
+    : '';
+}
+
+function deriveStartupError(status) {
+  if (!status) {
+    return null;
+  }
+
+  if (status.state === 'failed' && !status.hasEverBeenHealthy) {
+    return status.lastError;
+  }
+
+  return null;
+}
+
+function getBackendStatusSnapshot() {
+  return { ...runtimeConfig.backendStatus };
+}
+
+function setBackendStatus(nextStatus) {
+  runtimeConfig = {
+    runtimeTarget: 'desktop',
+    apiBaseUrl: nextStatus.apiBaseUrl,
+    backendStartupError: deriveStartupError(nextStatus),
+    backendStatus: nextStatus,
+  };
+
+  if (!mainWindow || mainWindow.isDestroyed()) {
+    return;
+  }
+
+  mainWindow.webContents.send(BACKEND_STATUS_CHANNEL, getBackendStatusSnapshot());
+}
+
+async function ensureBackendPortConfigured() {
+  if (backendPort !== null) {
+    return getBackendBaseUrl();
+  }
+
+  backendPort = await findFreePort();
+  const baseUrl = getBackendBaseUrl();
+  setBackendStatus(createBackendStatus({
+    state: 'starting',
+    apiBaseUrl: baseUrl,
+    lastError: null,
+    isRestarting: false,
+    hasEverBeenHealthy: false,
+  }));
+  return baseUrl;
+}
+
+async function waitForBackendHealth(baseUrl, processRef, getLaunchError, timeoutMs = 45000) {
   const startTime = Date.now();
 
   while (Date.now() - startTime < timeoutMs) {
-    if (backendLaunchError) {
-      throw backendLaunchError;
+    const launchError = getLaunchError();
+    if (launchError) {
+      throw launchError;
     }
 
-    if (backendProcess && backendProcess.exitCode !== null) {
+    if (processRef.exitCode !== null) {
       break;
     }
 
@@ -145,10 +228,12 @@ async function waitForBackendHealth(baseUrl, timeoutMs = 45000) {
     await new Promise((resolve) => setTimeout(resolve, 250));
   }
 
-  const logTail = backendStartupLogs.length > 0
-    ? ` Backend logs: ${backendStartupLogs.join(' | ')}`
-    : '';
-  throw new Error(`The local prediction service did not become healthy in time.${logTail}`);
+  const launchError = getLaunchError();
+  if (launchError) {
+    throw launchError;
+  }
+
+  throw new Error(`The local prediction service did not become healthy in time.${formatBackendLogTail()}`);
 }
 
 async function stopBackendProcess() {
@@ -179,14 +264,29 @@ async function stopBackendProcess() {
   });
 }
 
-async function startBackendProcess() {
-  const port = await findFreePort();
-  const baseUrl = `http://127.0.0.1:${port}`;
-  const { command, args, cwd } = getBackendSpawnCommand(port);
+function buildEarlyExitError(code, signal) {
+  return new Error(
+    `The local prediction service exited unexpectedly (code=${code ?? 'null'}, signal=${signal ?? 'null'}).${formatBackendLogTail()}`,
+  );
+}
+
+function focusMainWindow() {
+  if (!mainWindow || mainWindow.isDestroyed()) {
+    return false;
+  }
+
+  return focusWindow(mainWindow);
+}
+
+async function launchBackendAttempt() {
+  const baseUrl = await ensureBackendPortConfigured();
+  const { command, args, cwd } = getBackendSpawnCommand(backendPort);
 
   backendStartupLogs = [];
-  backendLaunchError = null;
-  backendProcess = spawn(command, args, {
+
+  let launchError = null;
+  let becameHealthy = false;
+  const processRef = spawn(command, args, {
     cwd,
     env: {
       ...process.env,
@@ -197,30 +297,155 @@ async function startBackendProcess() {
     stdio: ['ignore', 'pipe', 'pipe'],
   });
 
-  backendProcess.stdout?.on('data', (chunk) => {
+  backendProcess = processRef;
+  processRef.stdout?.on('data', (chunk) => {
     pushBackendLog(chunk);
     process.stdout.write(`[backend] ${chunk}`);
   });
-  backendProcess.stderr?.on('data', (chunk) => {
+  processRef.stderr?.on('data', (chunk) => {
     pushBackendLog(chunk);
     process.stderr.write(`[backend] ${chunk}`);
   });
-  backendProcess.once('error', (error) => {
-    backendLaunchError = new Error(`Unable to launch the local prediction service: ${error.message}`);
+  processRef.once('error', (error) => {
+    launchError = new Error(`Unable to launch the local prediction service: ${error.message}`);
   });
 
-  backendProcess.once('exit', (code, signal) => {
+  processRef.once('exit', (code, signal) => {
+    if (backendProcess === processRef) {
+      backendProcess = null;
+    }
+
+    const exitError = buildEarlyExitError(code, signal);
+    if (!becameHealthy) {
+      launchError = exitError;
+      return;
+    }
+
     if (!app.isQuitting) {
-      console.error(`Bundled backend exited early (code=${code}, signal=${signal}).`);
+      console.error(exitError.message);
+      void recoverBackendAfterUnexpectedExit(exitError.message);
     }
   });
 
-  await waitForBackendHealth(baseUrl);
-  runtimeConfig = {
-    runtimeTarget: 'desktop',
+  await waitForBackendHealth(baseUrl, processRef, () => launchError);
+  becameHealthy = true;
+}
+
+async function startBackendFlow(mode) {
+  if (backendStartPromise) {
+    return backendStartPromise;
+  }
+
+  const baseUrl = await ensureBackendPortConfigured();
+  const hasEverBeenHealthy = runtimeConfig.backendStatus.hasEverBeenHealthy;
+  setBackendStatus(createBackendStatus({
+    state: mode === 'startup' && !hasEverBeenHealthy ? 'starting' : 'restarting',
     apiBaseUrl: baseUrl,
-    backendStartupError: null,
-  };
+    lastError: mode === 'startup' ? null : runtimeConfig.backendStatus.lastError,
+    isRestarting: mode !== 'startup' || hasEverBeenHealthy,
+    hasEverBeenHealthy,
+  }));
+
+  backendStartPromise = launchBackendAttempt()
+    .then(() => {
+      setBackendStatus(createBackendStatus({
+        state: 'healthy',
+        apiBaseUrl: getBackendBaseUrl(),
+        lastError: null,
+        isRestarting: false,
+        hasEverBeenHealthy: true,
+      }));
+      return getBackendStatusSnapshot();
+    })
+    .finally(() => {
+      backendStartPromise = null;
+    });
+
+  return backendStartPromise;
+}
+
+async function recoverBackendAfterUnexpectedExit(initialErrorMessage) {
+  if (backendRecoveryPromise) {
+    return backendRecoveryPromise;
+  }
+
+  backendRecoveryPromise = (async () => {
+    let lastError = initialErrorMessage;
+
+    for (let attempt = 0; attempt < MAX_BACKEND_RESTART_ATTEMPTS; attempt += 1) {
+      const recoveryStatus = getRecoveryStatus({
+        attempt,
+        maxAttempts: MAX_BACKEND_RESTART_ATTEMPTS,
+        apiBaseUrl: getBackendBaseUrl(),
+        lastError,
+        hasEverBeenHealthy: true,
+      });
+      setBackendStatus(recoveryStatus);
+
+      const delayMs = getRestartDelayMs(attempt);
+      if (delayMs > 0) {
+        await new Promise((resolve) => setTimeout(resolve, delayMs));
+      }
+
+      try {
+        await startBackendFlow('restart');
+        return getBackendStatusSnapshot();
+      } catch (error) {
+        lastError = getErrorMessage(error);
+      }
+    }
+
+    setBackendStatus(createBackendStatus({
+      state: 'failed',
+      apiBaseUrl: getBackendBaseUrl(),
+      lastError,
+      isRestarting: false,
+      hasEverBeenHealthy: true,
+    }));
+
+    throw new Error(lastError);
+  })().finally(() => {
+    backendRecoveryPromise = null;
+  });
+
+  return backendRecoveryPromise;
+}
+
+async function ensureBackendReady() {
+  if (!getBackendBaseUrl()) {
+    throw new Error(runtimeConfig.backendStartupError ?? 'The packaged local prediction service is not configured.');
+  }
+
+  if (runtimeConfig.backendStatus.state === 'healthy' && backendProcess && backendProcess.exitCode === null) {
+    return getBackendStatusSnapshot();
+  }
+
+  try {
+    if (backendRecoveryPromise) {
+      await backendRecoveryPromise;
+    } else if (backendStartPromise) {
+      await backendStartPromise;
+    } else {
+      await startBackendFlow(runtimeConfig.backendStatus.hasEverBeenHealthy ? 'restart' : 'startup');
+    }
+  } catch (error) {
+    const message = getErrorMessage(error);
+    setBackendStatus(createBackendStatus({
+      state: 'failed',
+      apiBaseUrl: getBackendBaseUrl(),
+      lastError: message,
+      isRestarting: false,
+      hasEverBeenHealthy: runtimeConfig.backendStatus.hasEverBeenHealthy,
+    }));
+    throw new Error(message);
+  }
+
+  const snapshot = getBackendStatusSnapshot();
+  if (snapshot.state !== 'healthy') {
+    throw new Error(snapshot.lastError ?? 'The local prediction service is unavailable.');
+  }
+
+  return snapshot;
 }
 
 function encodeRuntimeConfig() {
@@ -251,7 +476,21 @@ function registerAppProtocol() {
   });
 }
 
+function registerIpcHandlers() {
+  if (ipcHandlersRegistered) {
+    return;
+  }
+
+  ipcMain.handle(BACKEND_ENSURE_READY_CHANNEL, async () => ensureBackendReady());
+  ipcHandlersRegistered = true;
+}
+
 async function createMainWindow() {
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    focusMainWindow();
+    return mainWindow;
+  }
+
   mainWindow = new BrowserWindow({
     width: 1280,
     height: 900,
@@ -270,27 +509,72 @@ async function createMainWindow() {
   mainWindow.once('ready-to-show', () => {
     mainWindow?.show();
   });
+  mainWindow.on('closed', () => {
+    mainWindow = null;
+  });
+  mainWindow.webContents.on('did-finish-load', () => {
+    mainWindow?.webContents.send(BACKEND_STATUS_CHANNEL, getBackendStatusSnapshot());
+  });
 
   await mainWindow.loadURL(INDEX_URL);
+  return mainWindow;
+}
+
+async function showExistingWindowOrCreate() {
+  if (focusMainWindow()) {
+    return;
+  }
+
+  await createMainWindow();
 }
 
 async function bootstrapDesktopApp() {
   try {
     ensureRendererBuildExists();
     registerAppProtocol();
-    await startBackendProcess();
+    registerIpcHandlers();
+
+    try {
+      await ensureBackendPortConfigured();
+    } catch (error) {
+      const message = getErrorMessage(error, 'Unable to allocate the local prediction service port.');
+      setBackendStatus(createBackendStatus({
+        state: 'failed',
+        apiBaseUrl: null,
+        lastError: message,
+        isRestarting: false,
+        hasEverBeenHealthy: false,
+      }));
+    }
+
     await createMainWindow();
+
+    if (getBackendBaseUrl()) {
+      void startBackendFlow('startup').catch((error) => {
+        const message = getErrorMessage(error);
+        setBackendStatus(createBackendStatus({
+          state: 'failed',
+          apiBaseUrl: getBackendBaseUrl(),
+          lastError: message,
+          isRestarting: false,
+          hasEverBeenHealthy: runtimeConfig.backendStatus.hasEverBeenHealthy,
+        }));
+      });
+    }
   } catch (error) {
-    const message = error instanceof Error ? error.message : 'Unknown backend startup failure.';
+    const message = getErrorMessage(error);
     console.error(message);
     await stopBackendProcess();
     app.exit(1);
-    return;
   }
 }
 
 app.on('before-quit', () => {
   app.isQuitting = true;
+});
+
+app.on('second-instance', () => {
+  void showExistingWindowOrCreate();
 });
 
 app.whenReady().then(bootstrapDesktopApp);
@@ -303,9 +587,7 @@ app.on('window-all-closed', async () => {
 });
 
 app.on('activate', async () => {
-  if (BrowserWindow.getAllWindows().length === 0) {
-    await createMainWindow();
-  }
+  await showExistingWindowOrCreate();
 });
 
 app.on('will-quit', async (event) => {

@@ -1,6 +1,11 @@
 import { createApiClient } from '@/lib/api';
 import { findAirportByCode, normalizeAirportCode } from '@/lib/airports';
-import { getRuntimeConfig, isDesktopRuntime } from '@/lib/runtime';
+import {
+  describeDesktopRuntimeMessage,
+  ensureDesktopBackendReady,
+  getRuntimeConfig,
+  isDesktopRuntime,
+} from '@/lib/runtime';
 import type {
   FlightFormData,
   FlightValidationIssue,
@@ -209,11 +214,19 @@ export function validateFlightForm(data: FlightFormData): FlightValidationResult
 export async function submitPrediction(data: FlightFormData): Promise<PredictionResponse> {
   const { request, normalizedConnections } = preparePredictionRequest(data);
   const itinerarySummary = buildItinerarySummary(request, normalizedConnections);
-  const runtimeConfig = getRuntimeConfig();
+  let runtimeConfig = getRuntimeConfig();
+
+  if (runtimeConfig.runtimeTarget === 'desktop') {
+    await ensureDesktopBackendReady();
+    runtimeConfig = getRuntimeConfig();
+  }
 
   if (!apiClient.baseUrl) {
     if (runtimeConfig.runtimeTarget === 'desktop') {
-      throw new Error(runtimeConfig.backendStartupError ?? 'The packaged local prediction service is not configured.');
+      const desktopMessage = describeDesktopRuntimeMessage(runtimeConfig);
+      throw new Error(
+        desktopMessage.details ?? desktopMessage.summary ?? 'The packaged local prediction service is not configured.',
+      );
     }
 
     console.info('API base URL not configured. Falling back to mock prediction.');
@@ -229,10 +242,12 @@ export async function submitPrediction(data: FlightFormData): Promise<Prediction
     }, itinerarySummary);
   } catch (error) {
     if (isDesktopRuntime()) {
+      const latestRuntimeConfig = getRuntimeConfig();
       const message = error instanceof Error && error.message
         ? error.message
         : 'The local desktop prediction service is unavailable.';
-      throw new Error(runtimeConfig.backendStartupError ?? message);
+      const desktopMessage = describeDesktopRuntimeMessage(latestRuntimeConfig, message);
+      throw new Error(desktopMessage.details ?? message);
     }
 
     console.warn('Prediction API request failed; using mock response instead.', error);

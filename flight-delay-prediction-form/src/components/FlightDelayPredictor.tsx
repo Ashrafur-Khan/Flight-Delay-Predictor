@@ -1,11 +1,23 @@
 import { useEffect, useState } from 'react';
 import { AirportInput } from './AirportInput';
+import { DesktopRuntimeNotice } from './DesktopRuntimeNotice';
 import { PredictionResult } from './PredictionResult';
 import { AlertTriangle, ChevronDown, ChevronUp, Plane, Plus, X } from 'lucide-react';
 import type { FlightFormData, PredictionResponse } from '@/types';
 import { submitPrediction, validateFlightForm } from '@/services/prediction';
+import {
+  describeDesktopRuntimeMessage,
+  getRuntimeConfig,
+  isDesktopRuntime,
+  useRuntimeConfig,
+} from '@/lib/runtime';
 
 const formatStopLabel = (value: string, fallback: string) => value.trim() || fallback;
+
+interface PredictionErrorState {
+  summary: string;
+  details: string | null;
+}
 
 export function FlightDelayPredictor() {
   const [formData, setFormData] = useState<FlightFormData>({
@@ -22,7 +34,8 @@ export function FlightDelayPredictor() {
   const [showAdvanced, setShowAdvanced] = useState(false);
   const [prediction, setPrediction] = useState<PredictionResponse | null>(null);
   const [isLoading, setIsLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<PredictionErrorState | null>(null);
+  const runtimeConfig = useRuntimeConfig();
   const validation = validateFlightForm(formData);
   const blockingIssues = validation.blockingIssues;
   const warnings = validation.warnings;
@@ -33,6 +46,12 @@ export function FlightDelayPredictor() {
       setError(null);
     }
   }, [formData.originAirport, formData.destinationAirport, formData.connections, formData.temperature, formData.precipitation, blockingIssues.length]);
+
+  useEffect(() => {
+    if (runtimeConfig.backendStatus?.state === 'healthy') {
+      setError(null);
+    }
+  }, [runtimeConfig.backendStatus?.state]);
 
   const handleInputChange = <Field extends keyof FlightFormData>(
     field: Field,
@@ -66,7 +85,10 @@ export function FlightDelayPredictor() {
 
   const handlePredict = async () => {
     if (blockingIssues.length > 0) {
-      setError(blockingIssues[0]?.message ?? 'Please enter a valid flight.');
+      setError({
+        summary: blockingIssues[0]?.message ?? 'Please enter a valid flight.',
+        details: null,
+      });
       setPrediction(null);
       return;
     }
@@ -79,9 +101,21 @@ export function FlightDelayPredictor() {
       setPrediction(result);
     } catch (predictionError) {
       console.error('Prediction request failed', predictionError);
-      setError(
-        'Unable to fetch a prediction right now. Please try again shortly.',
-      );
+      if (isDesktopRuntime()) {
+        const details = predictionError instanceof Error && predictionError.message
+          ? predictionError.message
+          : null;
+        const desktopMessage = describeDesktopRuntimeMessage(getRuntimeConfig(), details);
+        setError({
+          summary: desktopMessage.summary,
+          details: desktopMessage.details,
+        });
+      } else {
+        setError({
+          summary: 'Unable to fetch a prediction right now. Please try again shortly.',
+          details: null,
+        });
+      }
       setPrediction(null);
     } finally {
       setIsLoading(false);
@@ -102,6 +136,16 @@ export function FlightDelayPredictor() {
     })),
     { label: 'Destination', value: formData.destinationAirport, fallback: 'Select destination' },
   ];
+  const desktopStatus = runtimeConfig.runtimeTarget === 'desktop' ? runtimeConfig.backendStatus : null;
+  const shouldShowDesktopBanner = Boolean(
+    desktopStatus
+    && (desktopStatus.state === 'starting'
+      || desktopStatus.state === 'restarting'
+      || (desktopStatus.state === 'failed' && desktopStatus.hasEverBeenHealthy)),
+  );
+  const desktopBannerMessage = shouldShowDesktopBanner
+    ? describeDesktopRuntimeMessage(runtimeConfig)
+    : null;
 
   return (
     <div className="max-w-7xl mx-auto px-4 py-8 sm:px-6 lg:px-8">
@@ -117,6 +161,16 @@ export function FlightDelayPredictor() {
         {/* Input Panel */}
         <div className="bg-white rounded-lg shadow-md p-6">
           <h2 className="text-xl font-semibold mb-6 text-gray-900">Flight Details</h2>
+
+          {desktopBannerMessage && (
+            <div className="mb-6">
+              <DesktopRuntimeNotice
+                title="Local Prediction Service"
+                message={desktopBannerMessage}
+                compact
+              />
+            </div>
+          )}
           
           {/* Core Inputs */}
           <div className="space-y-4">
@@ -364,9 +418,17 @@ export function FlightDelayPredictor() {
             {isLoading ? 'Analyzing...' : 'Predict Delay Probability'}
           </button>
           {error && (
-            <p className="mt-3 text-sm text-red-600" role="alert">
-              {error}
-            </p>
+            <div className="mt-3" role="alert">
+              <DesktopRuntimeNotice
+                title="Prediction Request"
+                message={{
+                  summary: error.summary,
+                  details: error.details,
+                  tone: 'error',
+                }}
+                compact
+              />
+            </div>
           )}
         </div>
 
