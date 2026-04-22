@@ -22,6 +22,14 @@ Mac and Windows users can now use the app without setting up Python, Node.js, or
 
 At its current state, the packaged desktop app bundles the built frontend, a frozen local FastAPI backend, and the trained model artifact used by the packaged release. End users do not need to generate datasets, train the model, run a backend server, or install Python separately.
 
+Supported desktop release targets:
+
+- Apple Silicon macOS 12 Monterey or newer
+
+Important compatibility note:
+
+- Apple Silicon Macs cannot run El Capitan or Big Sur-era release targets, so this repository does not ship an Apple Silicon desktop build for those operating systems.
+
 ## What The App Does
 
 At a high level:
@@ -125,7 +133,7 @@ Key files:
 ### Prerequisites
 
 - Node.js 20.11+ and npm 10.2+
-- Python 3.10+
+- Python 3.12.x for macOS desktop release builds
 - `venv`
 
 The backend, training flow, and desktop packaging all depend on the pinned Python packages in `requirements.txt`.
@@ -273,6 +281,12 @@ npm run validate:desktop-backend
 npm run test:desktop:backend-smoke
 ```
 
+For macOS packaging validation after PyInstaller output exists:
+
+```bash
+npm run validate:desktop-macos-bundle -- --path desktop/dist/backend/server --require-signature
+```
+
 If you change prediction logic, verify both:
 
 - direct-route prediction still works
@@ -303,6 +317,13 @@ Build a current-platform installer:
 npm run build:desktop
 ```
 
+For macOS desktop releases, set a pinned Python 3.12 runtime explicitly before running that build:
+
+```bash
+export FLIGHT_DELAY_DESKTOP_PYTHON=/absolute/path/to/python3.12
+npm run build:desktop
+```
+
 That build pipeline does the following:
 
 1. Cleans previous desktop build output.
@@ -310,8 +331,10 @@ That build pipeline does the following:
 3. Validates that a compatible trained model artifact is available.
 4. Builds the frontend.
 5. Freezes the backend.
-6. Smoke-tests the frozen backend on localhost.
-7. Packages the Electron app for the current platform.
+6. Validates the packaged backend Mach-O metadata against the macOS 12 deployment floor.
+7. Smoke-tests the frozen backend on localhost.
+8. Packages the Electron app for the current platform.
+9. Re-validates the packaged macOS backend and verifies signing expectations.
 
 Installer outputs are written to:
 
@@ -328,6 +351,12 @@ Platform targets:
 Cross-platform note:
 
 - Build each installer on its target operating system, locally or in CI.
+
+macOS release note:
+
+- Local ad-hoc macOS builds are useful for development but are not valid distribution artifacts.
+- Distribution builds should set `FLIGHT_DELAY_MAC_DISTRIBUTION=1` and provide signing and notarization credentials before packaging.
+- The build pipeline signs nested backend binaries, validates macOS deployment targets, and requires notarization credentials for distribution-mode builds.
 
 Optional checksum preparation for release assets:
 
@@ -369,6 +398,16 @@ Do not assume they will always be present on a fresh machine, new branch, or cle
 
 For public desktop releases, the packaged installer should include a validated trained model artifact so end users do not need to perform any of those steps themselves.
 
+Recommended macOS release checklist:
+
+1. Point `FLIGHT_DELAY_DESKTOP_PYTHON` at a pinned Python 3.12 runtime with `MACOSX_DEPLOYMENT_TARGET <= 12.0`.
+2. Run `npm run validate:desktop-backend`.
+3. Run `npm run test:desktop:backend-smoke`.
+4. Run `npm run build:desktop`.
+5. Verify the packaged app with `codesign --verify --deep --strict`.
+6. Verify the distribution build with `spctl -a -t exec -vv` when `FLIGHT_DELAY_MAC_DISTRIBUTION=1`.
+7. Test the packaged app on at least one macOS 12 Monterey machine and one newer Sonoma or Sequoia machine.
+
 ## Known Constraints
 
 - The model is trained on BTS aggregate operational features, not raw traveler-entered flight records.
@@ -377,6 +416,7 @@ For public desktop releases, the packaged installer should include a validated t
 - Airport and weather handling are static and heuristic; there are no live external aviation or weather APIs in this repo.
 - The grounded explanation layer explains the current result only. It is not a general travel copilot.
 - Browser-mode fallback paths can make the UI appear healthy even when the backend is unavailable, so debugging should always confirm which path is active.
+- Current Apple Silicon desktop support targets macOS 12+ because the Python/scikit-learn desktop runtime stack is not packaged for older Apple Silicon releases in this repository.
 
 ## Practical Workflow
 

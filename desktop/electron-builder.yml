@@ -1,6 +1,7 @@
 appId: com.flightdelaypredictor.desktop
 productName: Flight Delay Predictor
 artifactName: ${name}-${version}-${os}-${arch}.${ext}
+afterPack: desktop/scripts/sign-macos-backend.mjs
 directories:
   output: desktop/dist/installers
 files:
@@ -13,6 +14,11 @@ extraResources:
     filter:
       - '**/*'
 mac:
+  category: public.app-category.travel
+  minimumSystemVersion: 12.0
+  hardenedRuntime: true
+  entitlements: desktop/entitlements.mac.plist
+  entitlementsInherit: desktop/entitlements.mac.inherit.plist
   target:
     - dmg
 win:

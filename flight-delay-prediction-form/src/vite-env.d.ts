@@ -15,5 +15,15 @@ interface Window {
     readonly runtimeTarget: 'desktop';
     readonly apiBaseUrl: string | null;
     readonly backendStartupError: string | null;
+    readonly backendStartup: {
+      readonly code: string;
+      readonly title: string;
+      readonly message: string;
+      readonly technicalSummary: string | null;
+      readonly backendExecutablePath: string | null;
+      readonly logPath: string | null;
+      readonly exitCode: number | null;
+      readonly signal: string | null;
+    } | null;
   };
 }

@@ -11,6 +11,7 @@ const RUNTIME_ARG_PREFIX = '--flight-delay-runtime-config=';
 const BACKEND_EXECUTABLE = process.platform === 'win32'
   ? 'flight-delay-backend.exe'
   : 'flight-delay-backend';
+const BACKEND_LOG_FILE_NAME = 'backend-startup.log';
 
 protocol.registerSchemesAsPrivileged([
   {
@@ -28,12 +29,19 @@ protocol.registerSchemesAsPrivileged([
 let mainWindow = null;
 let backendProcess = null;
 let backendStartupLogs = [];
-let backendLaunchError = null;
-let runtimeConfig = {
-  runtimeTarget: 'desktop',
-  apiBaseUrl: null,
-  backendStartupError: null,
-};
+let backendLaunchDiagnostic = null;
+let backendExitDetails = null;
+let runtimeConfig = buildRuntimeConfig();
+
+function buildRuntimeConfig(overrides = {}) {
+  return {
+    runtimeTarget: 'desktop',
+    apiBaseUrl: null,
+    backendStartupError: null,
+    backendStartup: null,
+    ...overrides,
+  };
+}
 
 function getRepoRoot() {
   return path.resolve(__dirname, '..');
@@ -41,6 +49,65 @@ function getRepoRoot() {
 
 function getRendererDistPath() {
   return path.resolve(__dirname, '..', 'flight-delay-prediction-form', 'build');
+}
+
+function getDesktopLogFilePath() {
+  return path.join(app.getPath('userData'), 'logs', BACKEND_LOG_FILE_NAME);
+}
+
+function ensureDesktopLogFile() {
+  const logPath = getDesktopLogFilePath();
+  fs.mkdirSync(path.dirname(logPath), { recursive: true });
+  return logPath;
+}
+
+function resetDesktopLogFile() {
+  fs.writeFileSync(ensureDesktopLogFile(), '', 'utf8');
+}
+
+function appendDesktopLog(message) {
+  const trimmed = String(message).trim();
+  if (!trimmed) {
+    return;
+  }
+
+  fs.appendFileSync(ensureDesktopLogFile(), `${trimmed}\n`, 'utf8');
+}
+
+function getBundledBackendExecutablePath() {
+  return app.isPackaged
+    ? path.join(process.resourcesPath, 'backend', BACKEND_EXECUTABLE)
+    : 'Local Python module backend.desktop_entry';
+}
+
+function createBackendStartupDiagnostic(code, message, options = {}) {
+  return {
+    code,
+    title: options.title ?? 'The local prediction service did not start.',
+    message,
+    technicalSummary: options.technicalSummary ?? null,
+    backendExecutablePath: options.backendExecutablePath ?? getBundledBackendExecutablePath(),
+    logPath: options.logPath ?? getDesktopLogFilePath(),
+    exitCode: options.exitCode ?? null,
+    signal: options.signal ?? null,
+  };
+}
+
+function isBackendStartupDiagnostic(candidate) {
+  return Boolean(
+    candidate
+    && typeof candidate === 'object'
+    && typeof candidate.code === 'string'
+    && typeof candidate.message === 'string'
+    && typeof candidate.title === 'string',
+  );
+}
+
+function applyBackendStartupDiagnostic(diagnostic) {
+  runtimeConfig = buildRuntimeConfig({
+    backendStartup: diagnostic ?? null,
+    backendStartupError: diagnostic?.message ?? null,
+  });
 }
 
 function ensureRendererBuildExists() {
@@ -56,14 +123,10 @@ function ensureRendererBuildExists() {
   return rendererRoot;
 }
 
-function getBundledBackendExecutablePath() {
-  return path.join(process.resourcesPath, 'backend', BACKEND_EXECUTABLE);
-}
-
 function getBackendSpawnCommand(port) {
   if (app.isPackaged) {
     return {
-      command: getBundledBackendExecutablePath(),
+      command: path.join(process.resourcesPath, 'backend', BACKEND_EXECUTABLE),
       args: ['--port', String(port)],
       cwd: process.resourcesPath,
     };
@@ -107,13 +170,22 @@ async function findFreePort() {
   });
 }
 
-function pushBackendLog(chunk) {
+function pushBackendLog(stream, chunk) {
   const text = String(chunk).trim();
   if (!text) {
     return;
   }
 
-  backendStartupLogs.push(text);
+  const lines = text
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean);
+
+  for (const line of lines) {
+    const formattedLine = `[${new Date().toISOString()}] [${stream}] ${line}`;
+    backendStartupLogs.push(formattedLine);
+    appendDesktopLog(formattedLine);
+  }
   backendStartupLogs = backendStartupLogs.slice(-20);
 }
 
@@ -121,12 +193,20 @@ async function waitForBackendHealth(baseUrl, timeoutMs = 45000) {
   const startTime = Date.now();
 
   while (Date.now() - startTime < timeoutMs) {
-    if (backendLaunchError) {
-      throw backendLaunchError;
+    if (backendLaunchDiagnostic) {
+      throw backendLaunchDiagnostic;
     }
 
     if (backendProcess && backendProcess.exitCode !== null) {
-      break;
+      throw createBackendStartupDiagnostic(
+        'backend_exited_early',
+        'The local prediction service exited before it became ready.',
+        {
+          technicalSummary: `Bundled backend exited before becoming healthy (code=${backendExitDetails?.code ?? 'unknown'}, signal=${backendExitDetails?.signal ?? 'none'}).`,
+          exitCode: backendExitDetails?.code ?? null,
+          signal: backendExitDetails?.signal ?? null,
+        },
+      );
     }
 
     try {
@@ -134,21 +214,36 @@ async function waitForBackendHealth(baseUrl, timeoutMs = 45000) {
       if (response.ok) {
         const payload = await response.json();
         if (!payload.modelLoaded) {
-          throw new Error('Bundled backend started without a trained model artifact.');
+          throw createBackendStartupDiagnostic(
+            'model_incompatible',
+            'The local prediction service started without a compatible trained model artifact.',
+            {
+              technicalSummary: 'The packaged backend health check reported modelLoaded=false.',
+            },
+          );
         }
         return payload;
       }
     } catch (error) {
-      void error;
+      if (isBackendStartupDiagnostic(error)) {
+        throw error;
+      }
     }
 
     await new Promise((resolve) => setTimeout(resolve, 250));
   }
 
-  const logTail = backendStartupLogs.length > 0
-    ? ` Backend logs: ${backendStartupLogs.join(' | ')}`
-    : '';
-  throw new Error(`The local prediction service did not become healthy in time.${logTail}`);
+  const technicalSummary = backendStartupLogs.length > 0
+    ? `Recent backend logs: ${backendStartupLogs.join(' | ')}`
+    : 'No backend stdout or stderr was captured before the health check timed out.';
+
+  throw createBackendStartupDiagnostic(
+    'backend_unhealthy',
+    'The local prediction service did not become healthy in time.',
+    {
+      technicalSummary,
+    },
+  );
 }
 
 async function stopBackendProcess() {
@@ -184,8 +279,14 @@ async function startBackendProcess() {
   const baseUrl = `http://127.0.0.1:${port}`;
   const { command, args, cwd } = getBackendSpawnCommand(port);
 
+  resetDesktopLogFile();
   backendStartupLogs = [];
-  backendLaunchError = null;
+  backendLaunchDiagnostic = null;
+  backendExitDetails = null;
+  appendDesktopLog(
+    `[${new Date().toISOString()}] Launching backend command: ${command} ${args.join(' ')}`,
+  );
+
   backendProcess = spawn(command, args, {
     cwd,
     env: {
@@ -198,29 +299,37 @@ async function startBackendProcess() {
   });
 
   backendProcess.stdout?.on('data', (chunk) => {
-    pushBackendLog(chunk);
+    pushBackendLog('stdout', chunk);
     process.stdout.write(`[backend] ${chunk}`);
   });
   backendProcess.stderr?.on('data', (chunk) => {
-    pushBackendLog(chunk);
+    pushBackendLog('stderr', chunk);
     process.stderr.write(`[backend] ${chunk}`);
   });
   backendProcess.once('error', (error) => {
-    backendLaunchError = new Error(`Unable to launch the local prediction service: ${error.message}`);
+    backendLaunchDiagnostic = createBackendStartupDiagnostic(
+      'launch_blocked',
+      'The local prediction service could not be launched on this Mac.',
+      {
+        technicalSummary: `Unable to launch the bundled backend executable: ${error.message}`,
+      },
+    );
   });
 
   backendProcess.once('exit', (code, signal) => {
+    backendExitDetails = { code, signal };
+    appendDesktopLog(
+      `[${new Date().toISOString()}] Backend process exited (code=${code}, signal=${signal ?? 'none'}).`,
+    );
     if (!app.isQuitting) {
       console.error(`Bundled backend exited early (code=${code}, signal=${signal}).`);
     }
   });
 
   await waitForBackendHealth(baseUrl);
-  runtimeConfig = {
-    runtimeTarget: 'desktop',
+  runtimeConfig = buildRuntimeConfig({
     apiBaseUrl: baseUrl,
-    backendStartupError: null,
-  };
+  });
 }
 
 function encodeRuntimeConfig() {
@@ -278,14 +387,37 @@ async function bootstrapDesktopApp() {
   try {
     ensureRendererBuildExists();
     registerAppProtocol();
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Unknown desktop startup failure.';
+    console.error(message);
+    app.exit(1);
+    return;
+  }
+
+  try {
     await startBackendProcess();
+  } catch (error) {
+    const diagnostic = isBackendStartupDiagnostic(error)
+      ? error
+      : createBackendStartupDiagnostic(
+        'launch_blocked',
+        'The local prediction service could not be launched on this Mac.',
+        {
+          technicalSummary: error instanceof Error ? error.message : 'Unknown backend startup failure.',
+        },
+      );
+    console.error(diagnostic.technicalSummary ?? diagnostic.message);
+    applyBackendStartupDiagnostic(diagnostic);
+    await stopBackendProcess();
+  }
+
+  try {
     await createMainWindow();
   } catch (error) {
-    const message = error instanceof Error ? error.message : 'Unknown backend startup failure.';
+    const message = error instanceof Error ? error.message : 'Unknown desktop window creation failure.';
     console.error(message);
     await stopBackendProcess();
     app.exit(1);
-    return;
   }
 }
 

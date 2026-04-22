@@ -18,6 +18,7 @@ __pycache__/
 .mypy_cache/
 .venv/
 venv/
+.venv312/
 
 # Generated backend / analysis artifacts
 backend/model.pkl

@@ -10,7 +10,9 @@
     "build:backend:desktop": "node desktop/scripts/run-python.mjs -m PyInstaller --noconfirm --clean --distpath desktop/dist/backend desktop/pyinstaller/backend.spec",
     "stage:desktop-release-model": "node desktop/scripts/stage-release-model.mjs",
     "validate:desktop-backend": "node desktop/scripts/run-python.mjs desktop/scripts/validate_backend_release.py",
+    "validate:desktop-macos-bundle": "node desktop/scripts/run-python.mjs desktop/scripts/validate_macos_bundle.py",
     "test:desktop:backend-smoke": "node desktop/scripts/run-python.mjs desktop/scripts/smoke_test_backend.py",
+    "verify:desktop:macos-release": "node desktop/scripts/verify-macos-release.mjs",
     "start:desktop": "electron ."
   },
   "devDependencies": {
